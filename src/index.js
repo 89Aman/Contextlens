@@ -22,7 +22,15 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: { code: 'internal_error', message: 'Unexpected server error' } });
 });
 
-const port = process.env.PORT || 8080;
-app.listen(port, () => {
-  console.log(`ContextLens backend listening on port ${port}`);
-});
+const functions = require('firebase-functions');
+
+// Check if we're running locally (not in Firebase Functions emulator or production)
+if (process.env.NODE_ENV === 'development' && !process.env.FUNCTIONS_EMULATOR) {
+  const port = process.env.PORT || 8080;
+  app.listen(port, () => {
+    console.log(`ContextLens backend listening on port ${port}`);
+  });
+}
+
+// Export as Firebase Function
+exports.api = functions.https.onRequest(app);
