@@ -165,6 +165,7 @@ export function LoginPage() {
               )}
               {loadingProvider === 'github' ? 'Signing in...' : 'Sign in with GitHub'}
             </button>
+
           </div>
 
           {error && (

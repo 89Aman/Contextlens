@@ -43,7 +43,7 @@ export function ProjectPage() {
     searchTimer.current = setTimeout(async () => {
       setSearchLoading(true)
       try {
-        const results = await search(searchQuery, { branchName: branchFilter || undefined })
+        const results = await search(projectId!, searchQuery, { branchName: branchFilter || undefined })
         const matchedIds = new Set(results.episodes.map((e) => e.episodeId))
         setSearchResults(episodes.filter((e) => matchedIds.has(e.id)))
       } catch {

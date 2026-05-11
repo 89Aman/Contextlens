@@ -8,4 +8,16 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Split Firebase into its own chunk (~250KB gzip)
+          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+          // Split React + Router into a framework chunk
+          framework: ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
 })

@@ -11,6 +11,9 @@ import {
 import { db } from './firebase'
 import type { Project, Episode, Call } from '../types'
 
+// All data access requires a real authenticated UID.
+// The hooks guard against empty/null UIDs and return empty results.
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const toDate = (ts: any): Date => ts?.toDate?.() ?? new Date(ts)
 
@@ -22,8 +25,8 @@ export function useProjects(uid: string) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!uid) return
-
+    if (!uid) { setLoading(false); return }
+    setLoading(true)
     let completed = false
     const timeoutId = setTimeout(() => {
       if (!completed) {
@@ -86,8 +89,8 @@ export function useEpisodes(uid: string, projectId: string) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!uid || !projectId) return
-
+    if (!projectId || !uid) { setLoading(false); return }
+    setLoading(true)
     let completed = false
     const timeoutId = setTimeout(() => {
       if (!completed) {
@@ -134,8 +137,8 @@ export function useEpisodesByBranch(uid: string, projectId: string, branchName: 
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!uid || !projectId || !branchName) return
-
+    if (!projectId || !branchName || !uid) { setLoading(false); return }
+    setLoading(true)
     let completed = false
     const timeoutId = setTimeout(() => {
       if (!completed) {
@@ -183,8 +186,8 @@ export function useEpisode(uid: string, projectId: string, episodeId: string) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!uid || !projectId || !episodeId) return
-
+    if (!projectId || !episodeId || !uid) { setLoading(false); return }
+    setLoading(true)
     let completed = false
     const timeoutId = setTimeout(() => {
       if (!completed) {
@@ -236,7 +239,7 @@ export function useCalls(
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!enabled || !uid || !projectId || !episodeId) return
+    if (!enabled || !projectId || !episodeId || !uid) { setLoading(false); return }
     setLoading(true)
 
     let completed = false
@@ -294,6 +297,17 @@ export function useCalls(
   }, [enabled, uid, projectId, episodeId])
 
   return { data, loading, error }
+}
+
+// ─── useMigrateDemoData (DEPRECATED) ──────────────────────────────────────────
+// No longer needed — all data is now written under real authenticated UIDs.
+// Kept as a no-op stub to avoid breaking any existing imports.
+export function useMigrateDemoData() {
+  return {
+    migrate: async (_targetUid: string) => false,
+    migrating: false,
+    error: null as string | null,
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

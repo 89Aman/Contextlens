@@ -3,6 +3,7 @@
   "displayName": "ContextLens",
   "description": "ContextLens VS Code Extension",
   "version": "0.0.1",
+  "publisher": "noventra-Labs",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -10,11 +11,21 @@
     "Other"
   ],
   "activationEvents": [
-    "*"
+    "onStartupFinished",
+    "onView:contextlens.stateTree",
+    "onView:contextlens.chatView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "contextlens.signIn",
+        "title": "ContextLens: Sign In"
+      },
+      {
+        "command": "contextlens.signOut",
+        "title": "ContextLens: Sign Out"
+      },
       {
         "command": "contextlens.newEpisode",
         "title": "ContextLens: New Episode"
@@ -34,6 +45,18 @@
       {
         "command": "contextlens.openDashboard",
         "title": "ContextLens: Open Dashboard"
+      },
+      {
+        "command": "contextlens.openDashboardEpisode",
+        "title": "ContextLens: Open Dashboard (Episode)"
+      },
+      {
+        "command": "contextlens.openDashboardBranch",
+        "title": "ContextLens: Open Dashboard (Branch)"
+      },
+      {
+        "command": "contextlens.logExternalCall",
+        "title": "ContextLens: Log External AI Call"
       }
     ],
     "viewsContainers": {

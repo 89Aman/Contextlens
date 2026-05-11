@@ -27,7 +27,8 @@ router.post('/projects/create', async (req, res) => {
     await ref.set({ name, repoUrl: repoUrl || null, localWorkspaceName: localWorkspaceName || null, defaultBranch: defaultBranch || 'main', createdAt: now, updatedAt: now, settings: settings || {} });
     return res.json({ projectId: id });
   } catch (err) {
-    return res.status(500).json(typedError('write_failure', err.message));
+    console.error("FULL ERROR:", err);
+    return res.status(500).json(typedError('write_failure', err.stack || err.message));
   }
 });
 
