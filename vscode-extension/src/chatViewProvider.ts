@@ -28,17 +28,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case 'sendMessage':
           {
             const episode = EpisodeStore.get().getActiveEpisode();
-            if (!episode) {
+            const projectId = EpisodeStore.get().getProjectId();
+            if (!episode || !projectId) {
               vscode.window.showErrorMessage('No active episode. Create one first.');
               this._view?.webview.postMessage({ type: 'error', value: 'No active episode' });
               return;
             }
 
             const gitCtx = await GitContext.getContext();
+            const intentTag = data.intentTag || undefined;
+
             try {
-              const res = await ApiClient.sendChat(data.value, episode.id, gitCtx);
+              const res = await ApiClient.logCall({
+                projectId,
+                episodeId: episode.id,
+                promptText: data.value,
+                intentTag,
+                source: 'extension',
+                branchName: gitCtx.branch || undefined,
+                activeFilePath: gitCtx.activeFile || undefined,
+                relatedFiles: [],
+                diffSnapshot: gitCtx.diff || null,
+                todoMatches: gitCtx.markers,
+              });
               EpisodeStore.get().incrementCallCount();
-              this._view?.webview.postMessage({ type: 'addResponse', value: res.response });
+              if (gitCtx.activeFile) {
+                EpisodeStore.get().addChangedFile(gitCtx.activeFile);
+              }
+              this._view?.webview.postMessage({ type: 'addResponse', value: res.modelResponse });
             } catch (e: any) {
               this._view?.webview.postMessage({ type: 'error', value: e.message || 'Failed to send' });
             }

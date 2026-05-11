@@ -6,7 +6,7 @@ import { useProjects } from '../lib/firestoreHooks'
 export function SettingsPage() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
-  const { data: projects } = useProjects(user?.uid ?? '')
+  const { data: projects } = useProjects(user?.uid || 'contextlens-demo-user')
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId)

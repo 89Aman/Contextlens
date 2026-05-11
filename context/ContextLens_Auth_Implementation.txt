@@ -1,0 +1,443 @@
+ContextLens — Auth Implementation Guide
+Full changes needed across Extension + Backend to implement web login
+======================================================================
+
+OVERVIEW
+======================================================================
+
+Current problem:
+  - Extension has no auth flow
+  - "Not authenticated" error fires because uid/token are never set
+  - Backend has no /auth/login route
+
+What we are building:
+  - A VS Code → Browser → Backend → VS Code callback loop
+  - Developer clicks "Sign In", browser opens Google login
+  - After login, backend redirects back to VS Code with uid + token
+  - Extension stores token in SecretStorage
+  - All API calls use Bearer token from that point on
+
+Files to create or change:
+  EXTENSION:
+    NEW     src/auth.ts               (already provided as contextlens-auth.ts)
+    CHANGE  src/extension.ts          (wire auth, add signIn command)
+    CHANGE  src/apiClient.ts          (attach Bearer token to all requests)
+    CHANGE  src/episodeStore.ts       (call ensureSignedIn before API calls)
+    CHANGE  package.json              (declare signIn command + UriHandler)
+
+  BACKEND:
+    CHANGE  src/routes/api.js         (add GET /auth/login route)
+    CHANGE  src/routes/api.js         (update auth middleware)
+
+======================================================================
+STEP 1 — EXTENSION: src/auth.ts
+======================================================================
+
+File already provided as contextlens-auth.ts (drop into src/auth.ts).
+
+ONE change required in that file:
+  Line 4 — update EXTENSION_ID to your real value from package.json:
+    const EXTENSION_ID = 'yourpublisher.contextlens';
+
+  Replace "yourpublisher" with the value of "publisher" in package.json.
+  Replace "contextlens" with the value of "name" in package.json.
+
+  Example:
+    If package.json has: "publisher": "amandev", "name": "contextlens"
+    Then: const EXTENSION_ID = 'amandev.contextlens'
+
+No other changes needed in auth.ts.
+
+======================================================================
+STEP 2 — EXTENSION: src/extension.ts
+======================================================================
+
+CHANGE 1 — Import AuthManager at the top:
+
+  import { AuthManager, getAuthStateOrSignIn } from './auth';
+
+CHANGE 2 — In your activate() function, add these lines at the TOP
+(before any other logic like ensureProject):
+
+  const authManager = new AuthManager(context);
+  authManager.registerUriHandler();
+
+CHANGE 3 — Add a signIn command registration inside activate():
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.signIn', async () => {
+      try {
+        await authManager.ensureSignedIn();
+      } catch (err) {
+        // Error already shown by ensureSignedIn
+      }
+    })
+  );
+
+CHANGE 4 — Export or pass authManager to other modules that need it.
+
+  Option A (simplest): store it on a module-level variable
+    let _authManager: AuthManager;
+
+    export function getAuthManager() {
+      return _authManager;
+    }
+
+    // inside activate():
+    _authManager = authManager;
+
+  Option B: pass context around and call new AuthManager(context) inline.
+
+CHANGE 5 — On first activation, check if already signed in. If not,
+show a prompt (not a blocking error):
+
+  const existingAuth = await authManager.loadAuthState();
+  if (!existingAuth) {
+    const action = await vscode.window.showInformationMessage(
+      'ContextLens: Sign in with Google to start logging AI sessions.',
+      'Sign In'
+    );
+    if (action === 'Sign In') {
+      vscode.commands.executeCommand('contextlens.signIn');
+    }
+  }
+
+======================================================================
+STEP 3 — EXTENSION: src/apiClient.ts
+======================================================================
+
+Current state: likely sends no Authorization header (or throws if token missing).
+
+Required change: always fetch the token from SecretStorage before each call,
+attach it as Bearer. If no token, trigger sign-in then retry.
+
+Replace or update your post() / call() function with this pattern:
+
+  import * as vscode from 'vscode';
+
+  const API_BASE_URL = 'https://us-central1-contextlens-backend-001.cloudfunctions.net/api';
+  const SECRET_TOKEN_KEY = 'contextlens.auth.token';
+
+  async function getToken(context: vscode.ExtensionContext): Promise<string | null> {
+    return await context.secrets.get(SECRET_TOKEN_KEY) ?? null;
+  }
+
+  export async function apiPost(
+    context: vscode.ExtensionContext,
+    path: string,
+    body: Record<string, unknown>
+  ): Promise<any> {
+    const token = await getToken(context);
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (res.status === 401) {
+      // Token expired or invalid — clear it and re-trigger sign-in
+      await context.secrets.delete(SECRET_TOKEN_KEY);
+      await context.secrets.delete('contextlens.auth.uid');
+      vscode.window.showWarningMessage(
+        'ContextLens: Session expired. Please sign in again.',
+        'Sign In'
+      ).then((action) => {
+        if (action === 'Sign In') {
+          vscode.commands.executeCommand('contextlens.signIn');
+        }
+      });
+      throw new Error('Session expired');
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`API error ${res.status}: ${text}`);
+    }
+
+    return res.json();
+  }
+
+Also export a GET version if needed:
+
+  export async function apiGet(
+    context: vscode.ExtensionContext,
+    path: string
+  ): Promise<any> {
+    const token = await getToken(context);
+
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+    });
+
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    return res.json();
+  }
+
+======================================================================
+STEP 4 — EXTENSION: src/episodeStore.ts
+======================================================================
+
+Currently: calls createProject / createEpisode without checking auth.
+
+Required change: wrap every exported function that calls the API
+with an auth check.
+
+Pattern to apply to EVERY function that calls apiClient:
+
+  Before (example):
+    export async function ensureProject(context: vscode.ExtensionContext) {
+      // ... calls apiPost('/projects/create', ...)
+    }
+
+  After:
+    import { getAuthManager } from './extension';   // or pass authManager in
+
+    export async function ensureProject(context: vscode.ExtensionContext) {
+      const authManager = getAuthManager();
+      await authManager.ensureSignedIn();            // ensure token exists first
+
+      const token = await context.secrets.get('contextlens.auth.token');
+      const uid = await context.secrets.get('contextlens.auth.uid');
+
+      // now safe to call API
+      const data = await apiPost(context, '/projects/create', {
+        name: workspaceName,
+        repoUrl: remoteUrl,
+        uid,               // pass uid if backend needs it in body
+      });
+
+      // store projectId
+      context.workspaceState.update('contextlens.projectId', data.projectId);
+    }
+
+Apply same pattern to:
+  - createEpisode()
+  - closeEpisode()
+  - logCall()
+  - explainDiff()
+  - summarizeBranch()
+
+======================================================================
+STEP 5 — EXTENSION: package.json
+======================================================================
+
+CHANGE 1 — Add the signIn command to "contributes.commands":
+
+  {
+    "command": "contextlens.signIn",
+    "title": "ContextLens: Sign In"
+  }
+
+CHANGE 2 — The URI handler is registered in code (no extra package.json entry needed),
+BUT you need to make sure your extension's "publisher" field matches
+what you put in EXTENSION_ID in auth.ts.
+
+  "publisher": "yourpublisher"    ← must match EXTENSION_ID prefix
+
+CHANGE 3 (optional but recommended) — Add signIn to activation events
+so it shows up in command palette immediately:
+
+  "activationEvents": [
+    "onCommand:contextlens.signIn",
+    "onCommand:contextlens.newEpisode",
+    ...existing events...
+  ]
+
+======================================================================
+STEP 6 — BACKEND: GET /auth/login
+======================================================================
+
+This is a new route you need to add to your Cloud Functions API.
+
+Add this to src/routes/api.js (or wherever your express app is):
+
+  const admin = require('firebase-admin');
+  const { GoogleAuthProvider } = require('firebase/auth');  // client SDK if needed
+
+  // For simplicity, use Firebase Custom Token approach:
+  // 1. Use a static demo UID for hackathon (easiest)
+  // 2. Or implement full Google OAuth (more setup needed)
+
+  // OPTION A: Simplest — no real Google OAuth, just generate a custom token
+  // for a known demo UID. Good enough for hackathon.
+
+  app.get('/auth/login', async (req, res) => {
+    try {
+      const callbackUrl = req.query.callback;
+      if (!callbackUrl) {
+        return res.status(400).send('Missing callback parameter');
+      }
+
+      // DEMO MODE: use a fixed uid (no real Google OAuth needed)
+      const uid = 'contextlens-demo-user';
+
+      // Generate a Firebase custom token for this uid
+      const customToken = await admin.auth().createCustomToken(uid);
+
+      // Redirect back to VS Code extension with uid + token
+      // The extension's URI handler will catch this
+      const redirectUrl = `${callbackUrl}?uid=${uid}&token=${encodeURIComponent(customToken)}`;
+      res.redirect(redirectUrl);
+
+    } catch (err) {
+      console.error('Auth error:', err);
+      res.status(500).send('Authentication failed');
+    }
+  });
+
+  // NOTE: For real Google OAuth you would:
+  // 1. Redirect user to Google OAuth consent screen
+  // 2. Google redirects back to /auth/callback with a code
+  // 3. Exchange code for Google tokens
+  // 4. Use admin.auth().getUserByEmail() or createUser() to get/create uid
+  // 5. Generate custom token and redirect to VS Code callback
+
+OPTION B — Real Google OAuth (full implementation for later):
+  Use passport-google-oauth20 or googleapis npm package.
+  This is more work; go with Option A for hackathon.
+
+======================================================================
+STEP 7 — BACKEND: Update auth middleware for API routes
+======================================================================
+
+Current middleware likely does verifyIdToken and throws 401 if no token.
+
+For hackathon with Option A custom token flow:
+  The custom token from createCustomToken() is meant to be exchanged
+  by the CLIENT for an ID token. For simplicity in hackathon, skip
+  full verification and use a relaxed check.
+
+Replace your auth middleware in api.js with:
+
+  async function authMiddleware(req, res, next) {
+    try {
+      const authHeader = req.headers.authorization;
+
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        // No token provided — use demo user for hackathon
+        req.uid = 'contextlens-demo-user';
+        return next();
+      }
+
+      const token = authHeader.split(' ')[1];
+
+      try {
+        // Try to verify as a real ID token
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.uid = decoded.uid;
+      } catch (verifyErr) {
+        // Token might be a custom token (not an ID token) — fallback
+        // In production you would reject here; for hackathon, allow demo user
+        req.uid = 'contextlens-demo-user';
+      }
+
+      next();
+    } catch (err) {
+      console.error('Auth middleware error:', err);
+      res.status(401).json({ error: 'Authentication failed' });
+    }
+  }
+
+  // Apply to all routes that need auth:
+  app.use('/projects', authMiddleware);
+  app.use('/episodes', authMiddleware);
+  app.use('/calls', authMiddleware);
+  app.use('/branches', authMiddleware);
+  app.use('/search', authMiddleware);
+
+  // In each route handler, use req.uid instead of decoded.uid:
+  app.post('/projects/create', async (req, res) => {
+    const uid = req.uid;  // from middleware
+    // ... rest of handler
+  });
+
+======================================================================
+STEP 8 — DEPLOY ORDER
+======================================================================
+
+1. Make backend changes (Steps 6 + 7).
+   Deploy Cloud Functions:
+     firebase deploy --only functions
+
+2. Make extension changes (Steps 1-5).
+   Recompile:
+     pnpm run bundle   (or npm run build / tsc)
+   Repackage:
+     vsce package --no-dependencies
+   Reinstall .vsix in VS Code:
+     code --install-extension contextlens-0.0.1.vsix
+
+3. Test the full flow:
+   a. Open VS Code with a repo.
+   b. Run command: "ContextLens: Sign In"
+   c. Browser opens → your backend /auth/login route fires
+   d. Backend generates custom token and redirects to vscode://...
+   e. VS Code handleUri fires → stores uid + token
+   f. Notification: "ContextLens: Sign-in successful."
+   g. Run "ContextLens: New Episode" → no more "Not authenticated" error
+   h. Chat, Explain Diff, Open Dashboard all work.
+
+======================================================================
+STEP 9 — SUMMARY OF ALL FILES TO TOUCH
+======================================================================
+
+FILE                          ACTION        WHAT TO DO
+----------------------------------------------------------------------
+src/auth.ts                   CREATE        Drop in provided auth.ts file.
+                                            Update EXTENSION_ID constant.
+
+src/extension.ts              CHANGE        Import AuthManager.
+                                            Add registerUriHandler() call.
+                                            Add signIn command.
+                                            Add "sign in on first load" prompt.
+                                            Export getAuthManager() helper.
+
+src/apiClient.ts              CHANGE        Add getToken() helper.
+                                            Attach Authorization header on all calls.
+                                            Handle 401 with re-auth prompt.
+
+src/episodeStore.ts           CHANGE        Call authManager.ensureSignedIn()
+                                            before every API-touching function.
+
+package.json                  CHANGE        Add contextlens.signIn command.
+                                            Confirm publisher matches EXTENSION_ID.
+
+Backend: src/routes/api.js    CHANGE        Add GET /auth/login route.
+                                            Update auth middleware to use req.uid.
+
+======================================================================
+QUICK COPY-PASTE CHECKLIST
+======================================================================
+
+[ ] Update EXTENSION_ID in auth.ts
+[ ] Import AuthManager in extension.ts
+[ ] authManager.registerUriHandler() in activate()
+[ ] Add contextlens.signIn command in extension.ts
+[ ] Add getAuthManager() export in extension.ts
+[ ] Add first-load sign-in prompt in extension.ts
+[ ] Rewrite apiClient.ts to use Bearer token from SecretStorage
+[ ] Handle 401 response in apiClient.ts
+[ ] Wrap all episodeStore.ts API calls with ensureSignedIn()
+[ ] Add signIn command to package.json contributes.commands
+[ ] Add GET /auth/login route to backend api.js
+[ ] Update auth middleware to set req.uid
+[ ] Update all route handlers to use req.uid
+[ ] firebase deploy --only functions
+[ ] pnpm run bundle && vsce package
+[ ] code --install-extension contextlens-x.x.x.vsix
+[ ] Test: Sign In → New Episode → Chat → Explain Diff → Open Dashboard
+
+======================================================================
+END OF AUTH IMPLEMENTATION GUIDE
+======================================================================

@@ -16,8 +16,8 @@ interface RecentEpisode extends Episode {
 }
 
 export function HomePage() {
-  const { user } = useAuth()
-  const { data: projects, loading: projectsLoading, error: projectsError } = useProjects(user?.uid ?? '')
+  const { user, migrating } = useAuth()
+  const { data: projects, loading: projectsLoading, error: projectsError } = useProjects(user?.uid || 'contextlens-demo-user')
   const [recentEpisodes, setRecentEpisodes] = useState<RecentEpisode[]>([])
   const [episodesLoading, setEpisodesLoading] = useState(true)
   const [episodesError, setEpisodesError] = useState<string | null>(null)
@@ -26,30 +26,28 @@ export function HomePage() {
   const toDate = (ts: any): Date => ts?.toDate?.() ?? new Date(ts)
 
   useEffect(() => {
-    if (!user || projects.length === 0) {
+    if (projects.length === 0) {
       setEpisodesLoading(false)
       return
     }
 
     const fetchAll = async () => {
       setEpisodesError(null)
-      const all: RecentEpisode[] = []
       try {
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Recent episodes fetch timeout')), 3000)
-        )
-        
-        const fetchPromise = (async () => {
-          for (const project of projects) {
+        const effectiveUid = user?.uid || 'contextlens-demo-user'
+
+        // Fetch episodes from all projects in parallel
+        const results = await Promise.allSettled(
+          projects.map(async (project) => {
             const q = query(
-              collection(db, `users/${user.uid}/projects/${project.id}/episodes`),
+              collection(db, `users/${effectiveUid}/projects/${project.id}/episodes`),
               orderBy('startedAt', 'desc'),
               limit(5),
             )
             const snap = await getDocs(q)
-            snap.docs.forEach((d) => {
+            return snap.docs.map((d) => {
               const data = d.data()
-              all.push({
+              return {
                 id: d.id,
                 projectId: project.id,
                 label: data.label ?? 'Untitled',
@@ -66,15 +64,23 @@ export function HomePage() {
                 explainDiffRisks: data.explainDiffRisks ?? [],
                 explainDiffChecks: data.explainDiffChecks ?? [],
                 projectName: project.name,
-              })
+              } as RecentEpisode
             })
-          }
-        })()
+          })
+        )
 
-        await Promise.race([fetchPromise, timeoutPromise])
+        const all: RecentEpisode[] = []
+        for (const result of results) {
+          if (result.status === 'fulfilled') {
+            all.push(...result.value)
+          }
+          // Silently skip failed projects — partial data is better than no data
+        }
+
         all.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
         setRecentEpisodes(all.slice(0, 5))
       } catch (err: any) {
+        console.error('[ContextLens] Failed to fetch recent episodes:', err)
         setEpisodesError(err.message)
       } finally {
         setEpisodesLoading(false)
@@ -112,10 +118,13 @@ export function HomePage() {
 
         {!projectsLoading && projects.length === 0 && (
           <EmptyState
-            title="No projects yet"
-            description="Install the VS Code extension to start capturing AI coding sessions."
-            ctaLabel="View docs"
-            ctaHref="https://github.com"
+            title={migrating ? "Setting up your workspace..." : "No projects yet"}
+            description={migrating 
+              ? "We're copying demo data to your account so you can explore the features." 
+              : "Install the VS Code extension to start capturing AI coding sessions."
+            }
+            ctaLabel={migrating ? undefined : "View docs"}
+            ctaHref={migrating ? undefined : "https://github.com"}
           />
         )}
 

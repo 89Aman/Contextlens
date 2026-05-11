@@ -14,12 +14,12 @@ import { GitBranch, X } from 'lucide-react'
 export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const { user } = useAuth()
-  const { data: projects, loading: projectsLoading, error: projectsError } = useProjects(user?.uid ?? '')
+  const { data: projects, loading: projectsLoading, error: projectsError } = useProjects(user?.uid || 'contextlens-demo-user')
   const {
     data: episodes,
     loading: episodesLoading,
     error: episodesError,
-  } = useEpisodes(user?.uid ?? '', projectId ?? '')
+  } = useEpisodes(user?.uid || 'contextlens-demo-user', projectId ?? '')
 
   const project = projects.find((p) => p.id === projectId)
 
@@ -43,7 +43,7 @@ export function ProjectPage() {
     searchTimer.current = setTimeout(async () => {
       setSearchLoading(true)
       try {
-        const results = await search(searchQuery, { branchName: branchFilter || undefined })
+        const results = await search(projectId!, searchQuery, { branchName: branchFilter || undefined })
         const matchedIds = new Set(results.episodes.map((e) => e.episodeId))
         setSearchResults(episodes.filter((e) => matchedIds.has(e.id)))
       } catch {
@@ -180,7 +180,7 @@ export function ProjectPage() {
         <EpisodeTimeline
           episodes={filteredEpisodes}
           projectId={projectId ?? ''}
-          uid={user?.uid ?? ''}
+          uid={user?.uid || 'contextlens-demo-user'}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom'
-import { GitBranch, Settings, LogOut, FolderOpen } from 'lucide-react'
+import { GitBranch, Settings, LogOut, FolderOpen, Code } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useProjects } from '../../lib/firestoreHooks'
 import { useEpisodes } from '../../lib/firestoreHooks'
@@ -60,7 +60,7 @@ export function Sidebar() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const { projectId: activeProjectId } = useParams()
-  const { data: projects } = useProjects(user?.uid ?? '')
+  const { data: projects } = useProjects(user?.uid || 'contextlens-demo-user')
 
   const handleSignOut = async () => {
     await signOut()
@@ -127,9 +127,9 @@ export function Sidebar() {
                     />
                     <span className="truncate font-medium">{project.name}</span>
                   </Link>
-                  {isActive && user && (
+                  {isActive && (
                     <BranchList
-                      uid={user.uid}
+                      uid={user?.uid || 'contextlens-demo-user'}
                       projectId={project.id}
                       activeProjectId={activeProjectId ?? ''}
                     />
@@ -161,6 +161,15 @@ export function Sidebar() {
               {user.email}
             </span>
           </div>
+        )}
+        {user && (
+          <a
+            href={`https://contextlens-backend-001.web.app/api/auth/login?uid=${user.uid}&callback=vscode://noventra-Labs.contextlens`}
+            className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-primary hover:bg-primary/10 transition-colors"
+          >
+            <Code className="w-3.5 h-3.5" />
+            Connect VS Code
+          </a>
         )}
         <div className="flex items-center gap-1">
           <Link

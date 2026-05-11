@@ -1,16 +1,22 @@
 import * as vscode from 'vscode';
-import { Auth } from './auth';
+import { AuthManager, setAuthManager, getAuthManager } from './auth';
 import { EpisodeStore } from './episodeStore';
 import { StateTreeProvider } from './stateTreeProvider';
 import { ChatViewProvider } from './chatViewProvider';
 import { ApiClient } from './apiClient';
 import { GitContext } from './gitContext';
 import { Telemetry } from './telemetry';
+import { createHash } from 'crypto';
 
 export function activate(context: vscode.ExtensionContext) {
   Telemetry.log('Extension activated');
 
-  Auth.initialize(context);
+  // ── Auth setup (must be FIRST) ───────────────────────────────────────────
+
+  const authManager = new AuthManager(context);
+  authManager.registerUriHandler();
+  setAuthManager(authManager);
+
   EpisodeStore.initialize(context);
 
   const stateTreeProvider = new StateTreeProvider();
@@ -21,66 +27,400 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatViewProvider)
   );
 
-  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  // ── Status bar ───────────────────────────────────────────────────────────
+
+  const statusBarItem = vscode.window.createStatusBarItem('contextlens.status', vscode.StatusBarAlignment.Left, 100);
+  statusBarItem.name = 'ContextLens';
   statusBarItem.command = 'contextlens.openDashboard';
   context.subscriptions.push(statusBarItem);
+  setStatusBarRef(statusBarItem);
 
-  const updateStatusBar = () => {
+  const updateStatusBar = async () => {
+    const authState = await authManager.loadAuthState();
+
+    if (!authState) {
+      // BEFORE sign-in
+      statusBarItem.text = '$(account) ContextLens: Sign In';
+      statusBarItem.tooltip = 'Click to sign in to ContextLens';
+      statusBarItem.command = 'contextlens.signIn';
+      statusBarItem.color = new vscode.ThemeColor('statusBarItem.warningForeground');
+      statusBarItem.show();
+      return;
+    }
+
     const ep = EpisodeStore.get().getActiveEpisode();
-    if (ep) {
-      statusBarItem.text = `$(repo) ContextLens: ${ep.name} · ${ep.callCount} calls`;
+
+    if (!ep) {
+      // AFTER sign-in — no episode yet
+      statusBarItem.text = '$(check) ContextLens: Ready';
+      statusBarItem.tooltip = 'Signed in — Click to open dashboard';
+      statusBarItem.command = 'contextlens.openDashboard';
+      statusBarItem.color = new vscode.ThemeColor('statusBarItem.prominentForeground');
       statusBarItem.show();
     } else {
-      statusBarItem.hide();
+      // AFTER sign-in — episode active
+      statusBarItem.text = `$(circle-filled) ContextLens: ${ep.name} · ${ep.callCount} calls`;
+      statusBarItem.tooltip = `${ep.name} on ${ep.branchName} — ${ep.callCount} AI calls`;
+      statusBarItem.command = 'contextlens.openDashboardEpisode';
+      statusBarItem.color = new vscode.ThemeColor('statusBarItem.prominentForeground');
+      statusBarItem.show();
     }
   };
 
   EpisodeStore.get().onDidChange(() => {
     updateStatusBar();
+    stateTreeProvider.refresh();
   });
   updateStatusBar();
 
-  context.subscriptions.push(vscode.commands.registerCommand('contextlens.newEpisode', async () => {
-    const name = await vscode.window.showInputBox({ prompt: 'Enter episode name' });
-    if (name) {
-      EpisodeStore.get().createEpisode(name);
-      vscode.window.showInformationMessage(`Started episode: ${name}`);
-      Telemetry.log('New Episode Created', { name });
+  // ── First-load sign-in prompt ────────────────────────────────────────────
+
+  (async () => {
+    const existingAuth = await authManager.loadAuthState();
+    if (existingAuth) {
+      // Already signed in → auto-resolve project (only if workspace is open)
+      if (vscode.workspace.workspaceFolders?.length) {
+        await EpisodeStore.get().ensureProject();
+      }
+      updateStatusBar();
+      stateTreeProvider.refresh();
+    } else {
+      // Not signed in → show a friendly prompt (non-blocking)
+      const action = await vscode.window.showInformationMessage(
+        'ContextLens: Sign in with Google to start logging AI sessions.',
+        'Sign In'
+      );
+      if (action === 'Sign In') {
+        vscode.commands.executeCommand('contextlens.signIn');
+      }
     }
-  }));
+  })();
 
-  context.subscriptions.push(vscode.commands.registerCommand('contextlens.closeEpisode', () => {
-    EpisodeStore.get().closeEpisode();
-    vscode.window.showInformationMessage('Episode closed');
-    Telemetry.log('Episode Closed');
-  }));
-
-  context.subscriptions.push(vscode.commands.registerCommand('contextlens.explainDiff', async () => {
-    const gitCtx = await GitContext.getContext();
-    if (!gitCtx.diff) {
-      vscode.window.showErrorMessage('No diff available to explain');
-      return;
+  // Re-resolve project after signing in
+  authManager.onDidSignIn(async () => {
+    if (vscode.workspace.workspaceFolders?.length) {
+      await EpisodeStore.get().ensureProject();
     }
-    const res = await ApiClient.explainDiff(gitCtx.diff);
-    vscode.window.showInformationMessage(res.response);
-    Telemetry.log('Explain Diff executed');
-  }));
+    updateStatusBar();
+    stateTreeProvider.refresh();
+  });
 
-  context.subscriptions.push(vscode.commands.registerCommand('contextlens.summarizeBranch', async () => {
-    const gitCtx = await GitContext.getContext();
-    if (!gitCtx.branch) {
-      vscode.window.showErrorMessage('No branch detected');
-      return;
-    }
-    const res = await ApiClient.summarizeBranch(gitCtx.branch);
-    vscode.window.showInformationMessage(res.response);
-    Telemetry.log('Summarize Branch executed');
-  }));
+  // ── Auto-resolve when a folder is opened mid-session ────────────────────
 
-  context.subscriptions.push(vscode.commands.registerCommand('contextlens.openDashboard', () => {
-    vscode.env.openExternal(vscode.Uri.parse('https://contextlens.example.com'));
-    Telemetry.log('Dashboard Opened');
-  }));
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(async () => {
+      if (vscode.workspace.workspaceFolders?.length) {
+        const authState = await authManager.loadAuthState();
+        if (authState) {
+          await EpisodeStore.get().ensureProject();
+        }
+      }
+      updateStatusBar();
+      stateTreeProvider.refresh();
+    })
+  );
+
+  // ── Command: Sign In ─────────────────────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.signIn', async () => {
+      const existing = await authManager.loadAuthState();
+      if (existing) {
+        vscode.window.showInformationMessage('ContextLens: Already authenticated ✦');
+        return;
+      }
+      try {
+        await authManager.ensureSignedIn();
+      } catch (err: any) {
+        // Error already shown by ensureSignedIn
+      }
+    })
+  );
+
+  // ── Command: Sign Out ────────────────────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.signOut', async () => {
+      await authManager.signOut();
+      updateStatusBar();
+      stateTreeProvider.refresh();
+    })
+  );
+
+  // ── Command: New Episode ─────────────────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.newEpisode', async () => {
+      const name = await vscode.window.showInputBox({
+        prompt: 'Episode label? (e.g. "Add Rate Limiting")',
+        placeHolder: 'Describe the coding task',
+      });
+      if (name) {
+        await EpisodeStore.get().createEpisode(name);
+        vscode.window.showInformationMessage(`Started episode: ${name}`);
+        Telemetry.log('New Episode Created', { name });
+      }
+    })
+  );
+
+  // ── Command: Close Episode ───────────────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.closeEpisode', async () => {
+      await EpisodeStore.get().closeEpisode();
+      vscode.window.showInformationMessage('Episode closed');
+      Telemetry.log('Episode Closed');
+    })
+  );
+
+  // ── Command: Explain Diff ────────────────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.explainDiff', async () => {
+      const store = EpisodeStore.get();
+      const episode = store.getActiveEpisode();
+      const projectId = store.getProjectId();
+
+      if (!episode || !projectId) {
+        vscode.window.showErrorMessage('No active episode. Create one first.');
+        return;
+      }
+
+      const gitCtx = await GitContext.getContext();
+      if (!gitCtx.diff) {
+        vscode.window.showErrorMessage('No diff available to explain.');
+        return;
+      }
+
+      const diffHash = createHash('md5').update(gitCtx.diff).digest('hex');
+
+      try {
+        vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Explaining diff…' },
+          async () => {
+            const result = await ApiClient.explainDiff({
+              projectId,
+              episodeId: episode.id,
+              diffHash,
+              changedFiles: episode.changedFiles,
+            });
+
+            const panel = vscode.window.createWebviewPanel(
+              'contextlens.explainDiffResult',
+              '✦ Gemini Diff Analysis',
+              vscode.ViewColumn.Beside,
+              {}
+            );
+
+            const risksHtml = result.risks.length
+              ? result.risks.map((r: string) => `<li>⚠ ${r}</li>`).join('')
+              : '<li>No risks identified</li>';
+
+            const checksHtml = result.checks.length
+              ? result.checks.map((c: string) => `<li>✓ ${c}</li>`).join('')
+              : '<li>No specific checks suggested</li>';
+
+            panel.webview.html = `<!DOCTYPE html>
+<html><head><style>
+  body { font-family: var(--vscode-font-family, system-ui); padding: 20px; color: var(--vscode-foreground, #ccc); background: var(--vscode-editor-background, #1e1e1e); }
+  h2 { border-bottom: 1px solid var(--vscode-panel-border, #444); padding-bottom: 8px; }
+  ul { padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  .section { margin-bottom: 20px; }
+</style></head><body>
+  <h2>✦ Gemini Diff Analysis</h2>
+  <div class="section"><h3>Summary</h3><p>${result.summary}</p></div>
+  <div class="section"><h3>⚠ Potential Risks</h3><ul>${risksHtml}</ul></div>
+  <div class="section"><h3>✓ Suggested Checks</h3><ul>${checksHtml}</ul></div>
+</body></html>`;
+          }
+        );
+
+        Telemetry.log('Explain Diff executed');
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Explain Diff failed: ${err.message}`);
+      }
+    })
+  );
+
+  // ── Command: Summarize Branch ────────────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.summarizeBranch', async () => {
+      const store = EpisodeStore.get();
+      const projectId = store.getProjectId();
+
+      if (!projectId) {
+        vscode.window.showErrorMessage('No project detected.');
+        return;
+      }
+
+      const gitCtx = await GitContext.getContext();
+      if (!gitCtx.branch) {
+        vscode.window.showErrorMessage('No branch detected.');
+        return;
+      }
+
+      try {
+        vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Summarizing branch…' },
+          async () => {
+            const result = await ApiClient.summarizeBranch({
+              projectId,
+              branchName: gitCtx.branch!,
+            });
+            vscode.window.showInformationMessage(`Branch Summary: ${result.pr_summary.substring(0, 200)}…`);
+          }
+        );
+        Telemetry.log('Summarize Branch executed');
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Summarize Branch failed: ${err.message}`);
+      }
+    })
+  );
+
+  // ── Command: Open Dashboard (project level) ──────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.openDashboard', async () => {
+      const projectId = EpisodeStore.get().getProjectId();
+      if (!projectId) {
+        const action = await vscode.window.showInformationMessage(
+          'ContextLens: Open a folder to start tracking a project.',
+          'Open Folder'
+        );
+        if (action === 'Open Folder') {
+          vscode.commands.executeCommand('vscode.openFolder');
+        }
+        return;
+      }
+      vscode.env.openExternal(vscode.Uri.parse(ApiClient.dashboardUrl(projectId)));
+      Telemetry.log('Dashboard Opened', { target: 'project' });
+    })
+  );
+
+  // ── Command: Open Dashboard (episode level) ──────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.openDashboardEpisode', () => {
+      const store = EpisodeStore.get();
+      const projectId = store.getProjectId();
+      const episode = store.getActiveEpisode();
+
+      if (!projectId) {
+        vscode.window.showErrorMessage('No project detected.');
+        return;
+      }
+
+      if (episode) {
+        vscode.env.openExternal(
+          vscode.Uri.parse(ApiClient.dashboardEpisodeUrl(projectId, episode.id))
+        );
+      } else {
+        vscode.env.openExternal(vscode.Uri.parse(ApiClient.dashboardUrl(projectId)));
+      }
+      Telemetry.log('Dashboard Opened', { target: 'episode' });
+    })
+  );
+
+  // ── Command: Open Dashboard (branch level) ───────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.openDashboardBranch', async () => {
+      const projectId = EpisodeStore.get().getProjectId();
+      if (!projectId) {
+        vscode.window.showErrorMessage('No project detected.');
+        return;
+      }
+
+      const gitCtx = await GitContext.getContext();
+      if (!gitCtx.branch) {
+        vscode.window.showErrorMessage('No branch detected.');
+        return;
+      }
+
+      vscode.env.openExternal(
+        vscode.Uri.parse(ApiClient.dashboardBranchUrl(projectId, gitCtx.branch))
+      );
+      Telemetry.log('Dashboard Opened', { target: 'branch' });
+    })
+  );
+
+  // ── Command: Log External AI Call ────────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.logExternalCall', async () => {
+      const store = EpisodeStore.get();
+      const episode = store.getActiveEpisode();
+      const projectId = store.getProjectId();
+
+      if (!episode || !projectId) {
+        vscode.window.showErrorMessage('No active episode. Create one first.');
+        return;
+      }
+
+      const tool = await vscode.window.showQuickPick(
+        ['Claude', 'ChatGPT', 'Copilot', 'Other'],
+        { placeHolder: 'Which AI tool did you use?' }
+      );
+      if (!tool) return;
+
+      const intentTag = await vscode.window.showInputBox({
+        prompt: 'Intent tag (what was this about?)',
+        placeHolder: 'e.g. "Claude design discussion for auth"',
+      });
+      if (intentTag === undefined) return;
+
+      const promptText = await vscode.window.showInputBox({
+        prompt: 'Paste your prompt or key question',
+        placeHolder: 'What did you ask?',
+      });
+      if (!promptText) return;
+
+      const modelResponse = await vscode.window.showInputBox({
+        prompt: 'Paste the AI response or key decisions',
+        placeHolder: 'What did the AI respond?',
+      });
+      if (!modelResponse) return;
+
+      const gitCtx = await GitContext.getContext();
+
+      try {
+        await ApiClient.logCall({
+          projectId,
+          episodeId: episode.id,
+          source: 'manual_log',
+          modelName: tool.toLowerCase(),
+          intentTag: intentTag || undefined,
+          promptText,
+          modelResponse,
+          branchName: gitCtx.branch || undefined,
+          activeFilePath: gitCtx.activeFile || undefined,
+          relatedFiles: [],
+          diffSnapshot: gitCtx.diff || null,
+          todoMatches: gitCtx.markers,
+        });
+
+        store.incrementCallCount();
+        vscode.window.showInformationMessage(`External ${tool} call logged to episode "${episode.name}"`);
+        Telemetry.log('External Call Logged', { tool });
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Failed to log external call: ${err.message}`);
+      }
+    })
+  );
 }
 
-export function deactivate() {}
+let _statusBarItem: vscode.StatusBarItem | undefined;
+
+export function setStatusBarRef(item: vscode.StatusBarItem) {
+  _statusBarItem = item;
+}
+
+export function deactivate() {
+  if (_statusBarItem) {
+    _statusBarItem.hide();
+    _statusBarItem.dispose();
+    _statusBarItem = undefined;
+  }
+}
