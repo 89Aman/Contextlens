@@ -40,3 +40,5 @@
 
 [2026-05-12 06:26:34] Extension: Implemented episode search in the tree view.
 
+[2026-05-12 06:26:34] Dashboard: Refactored Sidebar to use shared layout primitives.
+
