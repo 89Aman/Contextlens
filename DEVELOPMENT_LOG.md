@@ -24,3 +24,5 @@
 
 [2026-05-12 06:26:33] Dashboard: Added 'Loading' states to all auth-protected pages.
 
+[2026-05-12 06:26:33] Project: Updated .gitignore to exclude .firebase cache files.
+
