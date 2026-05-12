@@ -52,3 +52,5 @@
 
 [2026-05-12 06:26:35] Extension: Improved error messages for session expiration.
 
+[2026-05-12 06:26:35] Dashboard: Added a 'Getting Started' guide for new users.
+
