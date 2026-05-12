@@ -12,3 +12,5 @@
 
 [2026-05-12 06:26:33] Firestore: Rules hardened to require authentication for all paths.
 
+[2026-05-12 06:26:33] Extension: Implemented API versioning in request headers.
+
