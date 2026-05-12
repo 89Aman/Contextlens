@@ -26,3 +26,5 @@
 
 [2026-05-12 06:26:33] Project: Updated .gitignore to exclude .firebase cache files.
 
+[2026-05-12 06:26:34] Extension: Improved chat view styling with VS Code theme variables.
+
