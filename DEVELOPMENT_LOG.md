@@ -30,3 +30,5 @@
 
 [2026-05-12 06:26:34] Backend: Added CORS configuration for verified dashboard domains.
 
+[2026-05-12 06:26:34] Dashboard: Implemented better error handling for Firestore hooks.
+
