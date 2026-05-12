@@ -8,3 +8,5 @@
 
 [2026-05-12 06:26:32] Dashboard: Removed all legacy demo-user UI components.
 
+[2026-05-12 06:26:33] Extension: Added support for background token refreshing.
+
