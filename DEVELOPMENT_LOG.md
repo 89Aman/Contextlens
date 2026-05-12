@@ -34,3 +34,5 @@
 
 [2026-05-12 06:26:34] Extension: Added 'Explain Diff' command to the sidebar.
 
+[2026-05-12 06:26:34] Project: Updated README with production deployment instructions.
+
