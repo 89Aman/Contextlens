@@ -18,3 +18,5 @@
 
 [2026-05-12 06:26:33] Dashboard: Optimized TopBar layout for mobile responsiveness.
 
+[2026-05-12 06:26:33] Extension: Added keyboard shortcuts for episode management.
+
