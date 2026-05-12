@@ -48,3 +48,5 @@
 
 [2026-05-12 06:26:35] Dashboard: Added a 'Copy Project ID' utility button.
 
+[2026-05-12 06:26:35] Backend: Added health check endpoint at /api/health.
+
