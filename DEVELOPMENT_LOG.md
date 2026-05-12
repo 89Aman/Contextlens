@@ -32,3 +32,5 @@
 
 [2026-05-12 06:26:34] Dashboard: Implemented better error handling for Firestore hooks.
 
+[2026-05-12 06:26:34] Extension: Added 'Explain Diff' command to the sidebar.
+
