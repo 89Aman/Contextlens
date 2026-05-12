@@ -36,3 +36,5 @@
 
 [2026-05-12 06:26:34] Project: Updated README with production deployment instructions.
 
+[2026-05-12 06:26:34] Backend: Added rate limiting to prevent API abuse.
+
