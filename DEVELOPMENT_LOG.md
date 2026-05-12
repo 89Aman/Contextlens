@@ -22,3 +22,5 @@
 
 [2026-05-12 06:26:33] Backend: Improved error logging for failed token exchanges.
 
+[2026-05-12 06:26:33] Dashboard: Added 'Loading' states to all auth-protected pages.
+
