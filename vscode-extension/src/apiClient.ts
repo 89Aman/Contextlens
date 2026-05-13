@@ -239,7 +239,7 @@ export class ApiClient {
     repoUrl?: string;
     localWorkspaceName?: string;
     defaultBranch?: string;
-  }): Promise<{ projectId: string }> {
+  }): Promise<CreateProjectResponse> {
     return request('/projects/create', body);
   }
 
@@ -255,7 +255,7 @@ export class ApiClient {
     projectId: string;
     label: string;
     branchName: string;
-  }): Promise<{ episodeId: string }> {
+  }): Promise<CreateEpisodeResponse> {
     return request('/episodes/create', body);
   }
 
@@ -268,7 +268,7 @@ export class ApiClient {
   static async closeEpisode(body: {
     projectId: string;
     episodeId: string;
-  }): Promise<{ closed: boolean }> {
+  }): Promise<CloseEpisodeResponse> {
     return request('/episodes/close', body);
   }
 
@@ -294,13 +294,7 @@ export class ApiClient {
     diffSnapshot?: string | null;
     diffHash?: string;
     todoMatches?: string[];
-  }): Promise<{
-    callId: string;
-    modelName: string;
-    modelResponse: string;
-    latencyMs: number;
-    saved: boolean;
-  }> {
+  }): Promise<LogCallResponse> {
     return request('/calls/log', body);
   }
 
@@ -317,12 +311,7 @@ export class ApiClient {
     episodeId: string;
     diffHash: string;
     changedFiles?: string[];
-  }): Promise<{
-    summary: string;
-    risks: string[];
-    checks: string[];
-    fromCache?: boolean;
-  }> {
+  }): Promise<ExplainDiffResponse> {
     return request('/episodes/explain', body);
   }
 
@@ -339,11 +328,7 @@ export class ApiClient {
     projectId: string;
     branchName: string;
     episodes?: Array<{ label?: string; episodeSummary?: string }>;
-  }): Promise<{
-    pr_summary: string;
-    key_changes: string[];
-    review_risks: string[];
-  }> {
+  }): Promise<SummarizeBranchResponse> {
     return request('/branches/summarize', body);
   }
 
