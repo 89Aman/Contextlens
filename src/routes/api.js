@@ -65,6 +65,16 @@ router.post('/episodes/create', async (req, res) => {
   }
 });
 
+/**
+ * POST /calls/log
+ * Logs a specific AI call or context snapshot within an episode.
+ * 
+ * @param {express.Request} req - The request object.
+ * @param {string} req.body.projectId - The project ID.
+ * @param {string} req.body.episodeId - The episode ID.
+ * @param {string} req.body.promptText - The prompt text sent to the model.
+ * @param {express.Response} res - The response object.
+ */
 router.post('/calls/log', async (req, res) => {
   const { uid } = req.user;
   const payload = req.body;
