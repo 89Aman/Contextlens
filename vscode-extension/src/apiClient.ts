@@ -111,7 +111,12 @@ async function exchangeCustomTokenForIdToken(customToken: string): Promise<{
   });
 
   if (res.status !== 200) {
-    throw new Error(`Token exchange failed (${res.status}): ${res.body}`);
+    let message = res.body;
+    try {
+      const errorData = JSON.parse(res.body);
+      message = errorData.error?.message || message;
+    } catch { /* use raw body */ }
+    throw new Error(`Token exchange failed (${res.status}): ${message}`);
   }
 
   return JSON.parse(res.body);
@@ -135,7 +140,12 @@ async function refreshIdToken(refreshToken: string): Promise<{
   });
 
   if (res.status !== 200) {
-    throw new Error(`Token refresh failed (${res.status}): ${res.body}`);
+    let message = res.body;
+    try {
+      const errorData = JSON.parse(res.body);
+      message = errorData.error?.message || message;
+    } catch { /* use raw body */ }
+    throw new Error(`Token refresh failed (${res.status}): ${message}`);
   }
 
   return JSON.parse(res.body);
