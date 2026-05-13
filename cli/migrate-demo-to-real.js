@@ -1,4 +1,4 @@
-const { db } = require('./src/firebase');
+const { db } = require('../src/firebase');
 const { collection, getDocs, doc, setDoc } = require('firebase-admin/firestore');
 
 const DEMO_UID = 'contextlens-demo-user';
