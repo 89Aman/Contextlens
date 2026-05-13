@@ -32,7 +32,7 @@ export function BranchPage() {
     setSummaryLoading(true)
     setSummaryError(null)
     try {
-      const result = await branchSummary(projectId, decodedBranch)
+      const result = await branchSummary(projectId, decodedBranch, episodes)
       setSummaryResult(result)
     } catch (err) {
       setSummaryError(err instanceof Error ? err.message : 'Unknown error')

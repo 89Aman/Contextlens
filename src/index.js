@@ -1,5 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const cors = require('cors');
 const morgan = require('morgan');
 const api = require('./routes/api');
 const { requireAuth } = require('./middleware/auth');
@@ -7,6 +8,10 @@ const { requireAuth } = require('./middleware/auth');
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+
+// Enable CORS for all routes
+app.use(cors());
+
 app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '1mb' }));
 
@@ -262,7 +267,20 @@ app.post('/api/auth/exchange', async (req, res) => {
 });
 
 // All other API routes require Firebase auth
-app.use('/api', requireAuth, api);
+// --- v2 Functions Setup ---
+const { onRequest } = require('firebase-functions/v2/https');
+
+// Mount routes
+// We handle both /api prefix (from Hosting) and direct paths
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api')) {
+    req.url = req.url.replace('/api', '');
+    if (req.url === '') req.url = '/';
+  }
+  next();
+});
+
+app.use('/', requireAuth, api);
 
 app.use((err, req, res, next) => {
   console.error('Unhandled server error:', err);
@@ -270,15 +288,11 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: { code: 'internal_error', message: 'Unexpected server error' } });
 });
 
-const functions = require('firebase-functions');
-
-// Check if we're running locally (not in Firebase Functions emulator or production)
-if (process.env.NODE_ENV === 'development' && !process.env.FUNCTIONS_EMULATOR) {
-  const port = process.env.PORT || 8080;
-  app.listen(port, () => {
-    console.log(`ContextLens backend listening on port ${port}`);
-  });
-}
-
-// Export as Firebase Function
-exports.api = functions.https.onRequest(app);
+// Export as Firebase Function v2
+exports.api = onRequest({
+  region: 'us-central1',
+  memory: '512MiB',
+  timeoutSeconds: 300,
+  maxInstances: 10,
+  cors: true,
+}, app);

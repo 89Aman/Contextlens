@@ -31,5 +31,5 @@ export const auth = getAuth(app)
 // Ensure auth state persists across browser sessions in production
 setPersistence(auth, browserLocalPersistence).catch(console.error)
 
-// Use default Firestore instance (no named DB needed)
-export const db = getFirestore(app)
+// Use explicitly named Firestore instance "default"
+export const db = getFirestore(app, 'default')
