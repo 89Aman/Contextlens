@@ -21,8 +21,14 @@ app.get('/_health', (req, res) => res.json({ status: 'ok' }));
 // ── Auth routes (public — no auth required) ───────────────────────────────
 const { auth: firebaseAuth } = require('./firebase');
 
-// GET /api/auth/login — Show Google Sign-In page
-// Extension opens browser to: /api/auth/login?callback=vscode://extension-id
+/**
+ * GET /api/auth/login
+ * Renders a Google Sign-In page for the VS Code extension authentication flow.
+ * 
+ * @param {express.Request} req - The request object.
+ * @param {string} req.query.callback - The URI to redirect back to (e.g., vscode://...)
+ * @param {express.Response} res - The response object.
+ */
 app.get('/api/auth/login', async (req, res) => {
   try {
     const callbackUrl = req.query.callback;
