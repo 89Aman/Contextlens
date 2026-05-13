@@ -1,5 +1,5 @@
 import { explainDiff, branchSummary, search } from '../../lib/api';
-import * as apiModule from '../../lib/api';
+import { auth } from '../../lib/firebase';
 
 jest.mock('../../lib/firebase', () => ({
   auth: {
@@ -9,17 +9,15 @@ jest.mock('../../lib/firebase', () => ({
   },
 }));
 
-const { auth } = require('../../lib/firebase');
-
 describe('API Utilities', () => {
   let fetchMock: jest.Mock;
   const mockToken = 'mock_token_12345';
 
   beforeEach(() => {
     jest.clearAllMocks();
-    auth.currentUser.getIdToken.mockResolvedValue(mockToken);
+    (auth.currentUser as any).getIdToken.mockResolvedValue(mockToken);
     fetchMock = jest.fn();
-    global.fetch = fetchMock;
+    (globalThis as any).fetch = fetchMock;
   });
 
   afterEach(() => {
@@ -195,7 +193,7 @@ describe('API Utilities', () => {
     });
 
     it('should handle unauthenticated users', async () => {
-      auth.currentUser.getIdToken.mockRejectedValueOnce(new Error('No user'));
+      (auth.currentUser as any).getIdToken.mockRejectedValueOnce(new Error('No user'));
 
       await expect(explainDiff('project123', 'episode456')).rejects.toThrow();
     });

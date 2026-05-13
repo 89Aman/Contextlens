@@ -5,7 +5,7 @@ This document tracks the 50 contributions made to the ContextLens project to imp
 ## [1.0.0] - 2026-05-13
 
 ### Phase 1: Repository Standards (5/5)
-- [x] 1. Update `.gitignore` to exclude `coverage/`, `v2`, and `.env` files.
+- [x] 1. Update `.gitignore` to exclude `coverage/`, `dist/`, and `.env` files.
 - [x] 2. Add `CONTRIBUTING.md` with guidelines for new developers.
 - [x] 3. Add `CODE_OF_CONDUCT.md` using the Contributor Covenant.
 - [x] 4. Add `LICENSE` file (MIT).
@@ -18,9 +18,9 @@ This document tracks the 50 contributions made to the ContextLens project to imp
 - [x] 9. Add JSDoc to `vscode-extension/src/syncEngine.ts`.
 - [x] 10. Add JSDoc to `vscode-extension/src/apiClient.ts`.
 - [x] 11. Create `cli/` folder and move `contextlens-cli.js` (as `index.js`).
-- [x] 12. Create `cli/INSTALL.md` with setup instructions.
-- [x] 13. Create `cli/SUMMARY.md` with feature overview.
-- [x] 14. Move `migrate-demo-to-real.js` to `cli/migrate-demo-to-real.js` and fix imports.
+- [x] 12. Create `cli/README.md` with setup and command reference.
+- [x] 13. Consolidated CLI into a standalone `cl` command.
+- [x] 14. Cleaned up legacy migration and documentation scripts.
 - [ ] 15. Create `docs/API_REFERENCE.md`.
 
 ### Phase 3: Code Quality & Consistency (5/15)

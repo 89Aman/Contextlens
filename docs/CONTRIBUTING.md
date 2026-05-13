@@ -7,7 +7,7 @@ We love contributions! Whether you're fixing a bug, adding a feature, or improvi
 ContextLens is a monorepo containing:
 - `/vscode-extension`: The VS Code extension source code.
 - `/contextlens-dashboard`: The React-based web dashboard.
-- `/v2`: The backend Cloud Functions source code.
+- `/src`: The backend Cloud Functions source code.
 - `/docs`: Detailed architectural documentation and design specs.
 
 ## Getting Started
@@ -31,7 +31,7 @@ ContextLens is a monorepo containing:
 - Follow the design system guidelines in `ARCHITECTURE.md`.
 
 ### Backend
-- Open the `/v2` folder.
+- Open the `/src` folder.
 - Use `firebase emulators:start` to test functions locally.
 
 ## Coding Guidelines
