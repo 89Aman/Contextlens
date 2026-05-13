@@ -8,6 +8,39 @@ const DASHBOARD_BASE = 'https://contextlens-backend-001.web.app';
 // Firebase Web API key — needed to exchange custom tokens for ID tokens
 const FIREBASE_API_KEY = 'AIzaSyAQ2U7k1Z1h0myROPoj9upUMxJ-r_ZZ3ME';
 
+export interface CreateProjectResponse {
+  projectId: string;
+}
+
+export interface CreateEpisodeResponse {
+  episodeId: string;
+}
+
+export interface CloseEpisodeResponse {
+  closed: boolean;
+}
+
+export interface LogCallResponse {
+  callId: string;
+  modelName: string;
+  modelResponse: string;
+  latencyMs: number;
+  saved: boolean;
+}
+
+export interface ExplainDiffResponse {
+  summary: string;
+  risks: string[];
+  checks: string[];
+  fromCache?: boolean;
+}
+
+export interface SummarizeBranchResponse {
+  pr_summary: string;
+  key_changes: string[];
+  review_risks: string[];
+}
+
 /**
  * Internal helper to perform an HTTP(S) request using Node.js native modules.
  * This ensures zero-dependency operation within the VS Code extension environment.
