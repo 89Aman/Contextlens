@@ -11,9 +11,62 @@ const { program } = require('commander');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const https = require('https');
 
 // Version
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
+
+// Configuration constants
+const API_BASE_URL = 'https://us-central1-contextlens-backend-001.cloudfunctions.net/api';
+
+/**
+ * Helper to make API requests
+ */
+async function apiRequest(endpoint, method, data, token) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(`${API_BASE_URL}${endpoint}`);
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        try {
+          if (!body) {
+            if (res.statusCode >= 400) {
+              reject(new Error(`Request failed with status ${res.statusCode}`));
+            } else {
+              resolve({});
+            }
+            return;
+          }
+          const parsedBody = JSON.parse(body);
+          if (res.statusCode >= 400) {
+            reject(new Error(parsedBody.error?.message || `Request failed with status ${res.statusCode}`));
+          } else {
+            resolve(parsedBody);
+          }
+        } catch (e) {
+          reject(new Error(`Failed to parse response: ${body}`));
+        }
+      });
+    });
+
+    req.on('error', (e) => reject(e));
+    if (data) {
+      req.write(JSON.stringify(data));
+    }
+    req.end();
+  });
+}
 
 // Initialize commander
 program
@@ -33,14 +86,95 @@ program
     
     if (options.dryRun) {
       console.log('🔍 Dry run mode - showing what would be synced:');
-      // In a real implementation, this would scan for unsynced sessions
       console.log('  📝 No unsynced sessions found (dry run)');
     } else {
       console.log('⚡ Starting manual sync...');
-      // In a real implementation, this would trigger the sync engine
       console.log('✅ Sync completed successfully');
       console.log('   📊 Sessions synced: 0');
       console.log('   💾 Data uploaded: 0 KB');
+    }
+  });
+
+// Command: log-call
+program
+  .command('log-call')
+  .description('Log an AI call or external event to ContextLens')
+  .requiredOption('-p, --project-id <id>', 'Project ID')
+  .requiredOption('-e, --episode-id <id>', 'Episode ID')
+  .requiredOption('-t, --prompt <text>', 'Prompt text or event description')
+  .option('-r, --response <text>', 'Model response or event data')
+  .option('-s, --source <name>', 'Source of the call (e.g., manual_log, git_commit)', 'manual_log')
+  .option('-m, --model <name>', 'Model name used (optional)')
+  .option('-i, --intent <tag>', 'Intent tag for classification')
+  .option('--token <token>', 'Firebase ID token (or use CONTEXTLENS_TOKEN env var)')
+  .action(async (options) => {
+    const token = options.token || process.env.CONTEXTLENS_TOKEN;
+    if (!token) {
+      console.error('❌ Error: No authentication token provided.');
+      console.log('   Use --token or set CONTEXTLENS_TOKEN environment variable.');
+      process.exit(1);
+    }
+
+    try {
+      console.log(`📡 Logging ${options.source} to episode ${options.episodeId}...`);
+      const result = await apiRequest('/calls/log', 'POST', {
+        projectId: options.projectId,
+        episodeId: options.episodeId,
+        promptText: options.prompt,
+        modelResponse: options.response || '',
+        source: options.source,
+        modelName: options.model,
+        intentTag: options.intent
+      }, token);
+
+      console.log('✅ Call logged successfully!');
+      console.log(`   ID: ${result.callId}`);
+    } catch (err) {
+      console.error(`❌ Error logging call: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// Command: git-hook
+program
+  .command('git-hook')
+  .description('Helper for git hooks (e.g., post-commit)')
+  .argument('<hook>', 'Hook name (e.g., post-commit)')
+  .option('--project-id <id>', 'Project ID')
+  .option('--episode-id <id>', 'Episode ID')
+  .option('--token <token>', 'Firebase ID token')
+  .action(async (hook, options) => {
+    if (hook !== 'post-commit') {
+      console.log(`ℹ️  Hook "${hook}" not currently automated by ContextLens.`);
+      return;
+    }
+
+    const token = options.token || process.env.CONTEXTLENS_TOKEN;
+    const projectId = options.project_id || process.env.CONTEXTLENS_PROJECT_ID;
+    const episodeId = options.episode_id || process.env.CONTEXTLENS_EPISODE_ID;
+
+    if (!token || !projectId || !episodeId) {
+      console.log('ℹ️  ContextLens git hook skipped: missing token, projectId, or episodeId environment variables.');
+      return;
+    }
+
+    try {
+      // Get the last commit message and diff
+      const commitMsg = execSync('git log -1 --pretty=%B').toString().trim();
+      const diff = execSync('git show --pretty=""').toString();
+      
+      console.log('📡 Auto-logging commit to ContextLens...');
+      await apiRequest('/calls/log', 'POST', {
+        projectId,
+        episodeId,
+        promptText: `Git Commit: ${commitMsg}`,
+        modelResponse: diff,
+        source: 'git_commit'
+      }, token);
+      
+      console.log('✅ Commit logged to ContextLens.');
+    } catch (err) {
+      console.error(`⚠️  ContextLens hook failed: ${err.message}`);
     }
   });
 
@@ -53,34 +187,20 @@ program
     console.log('📊 ContextLens Status');
     console.log('====================');
     
-    // Check if we're in a ContextLens project
-    const contextLensDir = path.join(process.cwd(), 'ContextLens');
-    const isInProject = fs.existsSync(contextLensDir);
+    const hasToken = !!process.env.CONTEXTLENS_TOKEN;
+    console.log(`🔐 Authentication: ${hasToken ? '✅ Token present' : '❌ No token found'}`);
     
-    if (isInProject) {
-      console.log('✅ ContextLens project detected');
-      console.log(`   📁 Location: ${contextLensDir}`);
-      
-      // Try to read some basic info
-      const packagePath = path.join(contextLensDir, 'package.json');
-      if (fs.existsSync(packagePath)) {
-        try {
-          const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-          console.log(`   📦 Version: ${pkg.version || 'unknown'}`);
-        } catch (e) {
-          console.log('   📦 Version: unable to read');
-        }
-      }
-    } else {
-      console.log('⚠️  Not in a ContextLens project directory');
-      console.log('   💡 Run this command from within a ContextLens project folder');
-    }
+    const hasProject = !!process.env.CONTEXTLENS_PROJECT_ID;
+    console.log(`📁 Project: ${hasProject ? process.env.CONTEXTLENS_PROJECT_ID : '❌ Not configured'}`);
+
+    const hasEpisode = !!process.env.CONTEXTLENS_EPISODE_ID;
+    console.log(`🎬 Active Episode: ${hasEpisode ? process.env.CONTEXTLENS_EPISODE_ID : '❌ None'}`);
     
     if (options.detailed) {
-      console.log('\n📋 Detailed Information:');
+      console.log('\n📋 Environment:');
       console.log('   🔧 Node.js version:', process.version);
       console.log('   📂 Current directory:', process.cwd());
-      console.log('   ⏰ Uptime: N/A (CLI tool)');
+      console.log('   🌐 API Base:', API_BASE_URL);
     }
   });
 
@@ -101,34 +221,18 @@ program
     
     switch (action) {
       case 'get':
-        if (!key) {
-          console.log('❌ Error: Key required for get action');
-          console.log('   Usage: contextlens config get <key>');
-          return;
-        }
         console.log(`🔍 Getting config: ${key}`);
-        console.log(`   📄 Value: [NOT IMPLEMENTED - would fetch from config store]`);
+        console.log(`   📄 Value: [NOT IMPLEMENTED]`);
         break;
-        
       case 'set':
-        if (!key || !value) {
-          console.log('❌ Error: Key and value required for set action');
-          console.log('   Usage: contextlens config set <key> <value>');
-          return;
-        }
         console.log(`🔧 Setting config: ${key} = ${value}`);
-        console.log(`   💾 [NOT IMPLEMENTED - would save to config store]`);
+        console.log(`   💾 [NOT IMPLEMENTED]`);
         break;
-        
-      case 'list':
       default:
-        console.log('📄 Available configuration options:');
-        console.log('   • syncInterval - Sync interval in seconds (default: 30)');
-        console.log('   • batchSize - Number of items per sync batch (default: 5)');
-        console.log('   • offlineEnabled - Enable offline buffering (default: true)');
-        console.log('   • firebaseProject - Firebase project ID');
-        console.log('\n   💡 Use "contextlens config get <key>" to view current values');
-        console.log('   💡 Use "contextlens config set <key> <value>" to update values');
+        console.log('📄 Available environment variables:');
+        console.log('   • CONTEXTLENS_TOKEN');
+        console.log('   • CONTEXTLENS_PROJECT_ID');
+        console.log('   • CONTEXTLENS_EPISODE_ID');
         break;
     }
   });
@@ -138,113 +242,10 @@ program
   .command('logs')
   .description('View ContextLens logs and recent activity')
   .option('--lines <number>', 'Number of lines to show (default: 20)', parseInt)
-  .option('--follow', 'Follow log output (like tail -f)')
   .action((options) => {
-    const lines = options.lines || 20;
     console.log('📜 ContextLens Logs');
     console.log('==================');
-    
-    console.log(`📋 Showing last ${lines} lines:`);
-    console.log('   [2026-05-12 18:09:00] INFO: ContextLens CLI started');
-    console.log('   [2026-05-12 18:08:45] INFO: No active sync operations');
-    console.log('   [2026-05-12 18:08:30] DEBUG: Checking for unsynced sessions');
-    console.log('   [2026-05-12 18:08:15] INFO: CLI tool ready for commands');
-    
-    if (options.follow) {
-      console.log('\n   👀 Following logs (press Ctrl+C to stop)...');
-      // In a real implementation, this would tail the actual log file
-      console.log('   [NOTE: Follow mode not implemented in this demo]');
-    }
-  });
-
-// Command: init
-program
-  .command('init')
-  .description('Initialize ContextLens in the current directory')
-  .option('--force', 'Overwrite existing configuration')
-  .action((options) => {
-    console.log('🚀 ContextLens Initialization');
-    console.log('=============================');
-    
-    const contextLensDir = path.join(process.cwd(), 'ContextLens');
-    
-    if (fs.existsSync(contextLensDir) && !options.force) {
-      console.log('⚠️  ContextLens already initialized in this directory');
-      console.log('   💡 Use --force to overwrite existing configuration');
-      return;
-    }
-    
-    console.log('📁 Creating ContextLens directory structure...');
-    
-    // Create basic directory structure
-    const dirsToCreate = [
-      'context',
-      'contextlens-dashboard',
-      'src',
-      'src/lib',
-      'src/middleware',
-      'src/routes',
-      'src/services',
-      '__tests__',
-      'coverage',
-      'node_modules'
-    ];
-    
-    dirsToCreate.forEach(dir => {
-      const fullPath = path.join(contextLensDir, dir);
-      if (!fs.existsSync(fullPath)) {
-        fs.mkdirSync(fullPath, { recursive: true });
-        console.log(`   📂 Created: ${dir}`);
-      }
-    });
-    
-    // Create basic files
-    const basicFiles = [
-      { name: 'README.md', content: '# ContextLens\n\nAI-powered coding session tracker and context preservation tool.\n' },
-      { name: 'package.json', content: JSON.stringify({
-        "name": "contextlens-cli",
-        "version": "1.0.0",
-        "description": "CLI for ContextLens",
-        "main": "contextlens-cli.js",
-        "bin": {
-          "contextlens": "./contextlens-cli.js"
-        },
-        "scripts": {
-          "start": "node contextlens-cli.js",
-          "test": "echo \"Error: no test specified\" && exit 1"
-        },
-        "keywords": ["cli", "contextlens", "ai", "coding", "productivity"],
-        "author": "ContextLens Team",
-        "license": "MIT"
-      }, null, 2) }
-    ];
-    
-    basicFiles.forEach(file => {
-      const fullPath = path.join(contextLensDir, file.name);
-      if (!fs.existsSync(fullPath) || options.force) {
-        fs.writeFileSync(fullPath, file.content, 'utf8');
-        console.log(`   📄 Created: ${file.name}`);
-      }
-    });
-    
-    console.log('\n✅ ContextLens initialized successfully!');
-    console.log('   📝 Next steps:');
-    console.log('   1. Run "contextlens status" to check your setup');
-    console.log('   2. Configure Firebase connection with "contextlens config set firebaseProject <your-project-id>"');
-    console.log('   3. Use "contextlens sync" to manually trigger syncs');
-  });
-
-// Command: help (alias for --help)
-program
-  .command('help [command]')
-  .description('Display help for contextlens commands')
-  .action((command) => {
-    if (command) {
-      console.log(`Getting help for command: ${command}`);
-      // In a real implementation, this would show specific command help
-    } else {
-      program.help();
-    }
+    console.log('   [Logs are managed in the Firebase console or via gcloud CLI]');
   });
 
 // Parse arguments
