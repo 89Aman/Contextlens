@@ -44,10 +44,25 @@ ContextLens is a monorepo containing:
 
 ## Submitting a Pull Request
 
-1.  Ensure your code passes all lint checks and tests.
-2.  Update the `CHANGELOG.md` if your change is significant.
-3.  Submit a PR with a clear description of the problem solved or feature added.
-4.  Link to any related issues.
+1.  **Small PRs**: Keep PRs focused on a single change.
+2.  **Clear Title**: Use conventional commit titles for PRs (e.g., `feat: add AI redaction`).
+3.  **Description**: Explain *why* the change is needed, not just *what* was changed.
+4.  **Tests**: Include tests for all new logic.
+5.  **Documentation**: Update relevant Markdown files and JSDoc.
+6.  **Review**: Be prepared to iterate based on feedback.
+
+## Reporting Issues
+
+- **Check Existing Issues**: Search the issue tracker before opening a new one.
+- **Use Templates**: Use the provided issue templates if available.
+- **Provide Context**: Include Node.js version, OS, and clear steps to reproduce.
+- **Logs**: Attach relevant logs from the VS Code Output channel or backend server.
+
+## Project Principles
+
+- **Security First**: Never log or upload raw secrets or PII. Use redaction utilities.
+- **Minimalist Core**: Keep the extension fast and lightweight.
+- **Context is King**: Ensure all features contribute to the preservation of developer context.
 
 ## License
 
