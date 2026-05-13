@@ -48,6 +48,6 @@
     "nodemon": "^3.1.14"
   },
   "bin": {
-    "contextlens": "./contextlens-cli.js"
+    "contextlens": "./cli/index.js"
   }
 }
