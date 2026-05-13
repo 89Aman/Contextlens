@@ -91,9 +91,10 @@ export async function explainDiff(
 
 export async function branchSummary(
   projectId: string,
-  branch: string,
+  branchName: string,
+  episodes: any[],
 ): Promise<BranchSummaryResult> {
-  return post<BranchSummaryResult>('/branches/summarize', { projectId, branch })
+  return post<BranchSummaryResult>('/branches/summarize', { projectId, branchName, episodes })
 }
 
 export interface SearchFilters {

@@ -26,6 +26,16 @@ async function requireAuth(req, res, next) {
 
     const token = authHeader.split(' ')[1];
 
+    if (!token) {
+      console.error('Auth middleware: Bearer token is missing');
+      return res.status(401).json({
+        error: {
+          code: 'unauthenticated',
+          message: 'Malformed authorization header.',
+        },
+      });
+    }
+
     try {
       const decoded = await auth.verifyIdToken(token);
       req.user = {
@@ -34,11 +44,15 @@ async function requireAuth(req, res, next) {
         name: decoded.name || null,
       };
     } catch (verifyErr) {
-      console.error('Token verification failed:', verifyErr.code || verifyErr.message);
+      console.error('Token verification failed:', {
+        code: verifyErr.code,
+        message: verifyErr.message,
+        tokenPrefix: token ? token.substring(0, 10) + '...' : 'none'
+      });
       return res.status(401).json({
         error: {
           code: 'invalid_token',
-          message: 'Invalid or expired token. Please sign in again.',
+          message: verifyErr.message || 'Invalid or expired token.',
         },
       });
     }
