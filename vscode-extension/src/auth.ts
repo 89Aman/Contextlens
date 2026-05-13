@@ -30,6 +30,15 @@ export class AuthManager implements vscode.UriHandler {
   private _onDidSignOut = new vscode.EventEmitter<void>();
   public readonly onDidSignOut = this._onDidSignOut.event;
 
+  /**
+   * Quick check to see if the user is currently authenticated based on SecretStorage.
+   * Note: This is an async operation.
+   */
+  public async isAuthenticated(): Promise<boolean> {
+    const token = await this.getIdToken();
+    return !!token;
+  }
+
   private signInResolver: ((value: { uid: string; token: string }) => void) | null = null;
 
   constructor(private context: vscode.ExtensionContext) {}
