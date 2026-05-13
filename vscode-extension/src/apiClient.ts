@@ -9,8 +9,12 @@ const DASHBOARD_BASE = 'https://contextlens-backend-001.web.app';
 const FIREBASE_API_KEY = 'AIzaSyAQ2U7k1Z1h0myROPoj9upUMxJ-r_ZZ3ME';
 
 /**
- * Internal helper to perform an HTTP request using node's native http/https modules.
- * Returns a promise that resolves with the status code and raw response body.
+ * Internal helper to perform an HTTP(S) request using Node.js native modules.
+ * This ensures zero-dependency operation within the VS Code extension environment.
+ * 
+ * @param url The full URL to request.
+ * @param options Request configuration including method, headers, and optional body.
+ * @returns A promise resolving to the status code and raw response body.
  */
 function httpRequest(url: string, options: {
   method: string;
