@@ -9,6 +9,13 @@ export default defineConfig({
     },
   },
   build: {
+    // Generate source maps for production debugging (hidden from browser)
+    sourcemap: 'hidden',
+    // Warn when a chunk exceeds 500KB (gzip ~150KB)
+    chunkSizeWarningLimit: 500,
+    // Minification settings
+    target: 'es2020',
+    cssCodeSplit: true,
     rollupOptions: {
       output: {
         manualChunks: {
