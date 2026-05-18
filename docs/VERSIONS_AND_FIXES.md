@@ -87,9 +87,9 @@
 
 ## 🐛 Known Issues & Suggested Fixes
 
-### KI-001 — Re-authentication Required After Every Project Close
+### KI-001 — Re-authentication Required After Every Project Close ✅ RESOLVED
 
-**Severity:** High  
+**Severity:** High — **Status: SHIPPED**  
 **Symptom:** After closing a project/episode and switching workspace, the user is prompted to sign in again as if the session is lost.
 
 **Root Cause:**  
@@ -143,14 +143,18 @@ Firebase Auth's `currentUser` persists in `localStorage` (browser) but VS Code e
 
 **Expected Result:** Developer signs in once per device. Sessions persist across project switches, restarts, and workspace changes.
 
+> **✅ Implemented:** Dual-storage persistence (SecretStorage + globalState mirror) with 45-minute token refresh interval. Shipped in Phase 5.
+
 ***
 
-### KI-002 — Silent Auth Failures on Extension Host Restart
+### KI-002 — Silent Auth Failures on Extension Host Restart ✅ RESOLVED
 
-**Severity:** Medium  
+**Severity:** Medium — **Status: SHIPPED**  
 **Symptom:** After VS Code restarts or the extension host crashes, API calls fail silently — no error shown, data just stops syncing.
 
 **Suggested Fix:** Add an auth-state check at the top of every API call in `apiClient.ts`. If the token is missing, surface a non-intrusive notification (not a modal) prompting re-auth.
+
+> **✅ Implemented:** Auth-state guard added to `apiClient.ts request()`. Every API call proactively checks token validity and surfaces a non-intrusive "Sign in" notification with a one-click action button. Shipped in Phase 5.
 
 ***
 
@@ -158,11 +162,11 @@ Firebase Auth's `currentUser` persists in `localStorage` (browser) but VS Code e
 
 ### VS Code Extension
 
-- [ ] **Auto-Initialization & Background Watcher:** Automatically detect and create projects upon opening a workspace, watch the filesystem for real-time changes, and seamlessly update local context (functioning like a highly efficient, invisible git).
-- [ ] **Git Commit Linking:** Automatically tie ContextLens episodes directly to specific git commits to maintain an unbroken chain of history.
-- [ ] **Webview UX Polish:** Add a loading spinner and better error handling to the Gemini chat webview for smoother AI interactions.
+- [x] **Auto-Initialization & Background Watcher:** Automatically detect and create projects upon opening a workspace, watch the filesystem for real-time changes, and seamlessly update local context (functioning like a highly efficient, invisible git). ✅
+- [x] **Git Commit Linking:** Automatically tie ContextLens episodes directly to specific git commits to maintain an unbroken chain of history. ✅
+- [x] **Webview UX Polish:** Add a loading spinner and better error handling to the Gemini chat webview for smoother AI interactions. ✅
 - [ ] **Offline Mode (Phase 2):** Migrate offline buffer from in-memory + disk persistence to a full SQLite store for durable, queryable offline history. *(Phase 1 — disk buffer — already shipped in the Smart Sync Engine.)*
-- [ ] **Token Persistence & Silent Re-auth:** Implement `globalState`-based token storage so developers never have to sign in again after a project switch. *(See KI-001 above.)*
+- [x] **Token Persistence & Silent Re-auth:** Implement `globalState`-based token storage so developers never have to sign in again after a project switch. *(See KI-001 above.)* ✅
 
 ### Web Dashboard
 
@@ -172,7 +176,7 @@ Firebase Auth's `currentUser` persists in `localStorage` (browser) but VS Code e
 
 ### Security & Architecture
 
-- [ ] **Advanced Redaction:** Automatically strip API keys and PII from file diffs and context before any data leaves the local machine.
+- [x] **Advanced Redaction:** Automatically strip API keys and PII from file diffs and context before any data leaves the local machine. ✅ *(18 regex rules in `redaction.ts`)*
 - [ ] **Team Workspaces:** Begin restructuring Firestore rules and schemas to move beyond single-user data paths to collaborative project contexts.
 
 ***
@@ -183,12 +187,12 @@ Firebase Auth's `currentUser` persists in `localStorage` (browser) but VS Code e
 
 | ID | Feature | Description | Priority |
 | :--- | :--- | :--- | :--- |
-| **ENH-001** | Smart Episode Naming | Auto-generate episode names from the branch name + last commit message instead of requiring manual input (e.g., `feat/login → "Login Flow — add OAuth provider"`). | High |
-| **ENH-002** | Diff Size Guard | Before sending a diff to the sync engine, auto-truncate to 6,000 chars and log a warning if truncation occurred. Prevents silent large-payload failures. | High |
+| **ENH-001** | Smart Episode Naming | Auto-generate episode names from the branch name + last commit message instead of requiring manual input (e.g., `feat/login → "Login Flow — add OAuth provider"`). | ✅ Shipped |
+| **ENH-002** | Diff Size Guard | Before sending a diff to the sync engine, auto-truncate to 6,000 chars and log a warning if truncation occurred. Prevents silent large-payload failures. | ✅ Shipped |
 | **ENH-003** | Context Snapshot on Close | When an episode is auto-closed by the branch watcher, capture a final snapshot: open files, cursor positions, last terminal command. Restore on next open. | Medium |
 | **ENH-004** | Multi-Root Workspace Support | Detect and handle VS Code multi-root workspaces — create separate projects per root, not one project for the entire workspace. | Medium |
 | **ENH-005** | Episode Time Estimates | Track time between episode open and close. Show "Active for 2h 15m" in the sidebar and dashboard for productivity insights. | Low |
-| **ENH-006** | Stale Episode Detector | Flag episodes that have been open for >24 hours with no file saves or commits. Auto-prompt: "This episode looks stale — close it?" | Low |
+| **ENH-006** | Stale Episode Detector | Flag episodes that have been open for >24 hours with no file saves or commits. Auto-prompt: "This episode looks stale — close it?" | ✅ Shipped |
 
 ### Dashboard Enhancements
 
