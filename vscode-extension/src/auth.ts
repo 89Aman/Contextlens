@@ -9,7 +9,7 @@ const SECRET_ID_TOKEN_KEY = 'contextlens.auth.idToken';
 const SECRET_REFRESH_TOKEN_KEY = 'contextlens.auth.refreshToken';
 const SECRET_UID_KEY = 'contextlens.auth.uid';
 
-// GlobalState keys for KI-001: survive workspace switches & restarts
+// Legacy GlobalState keys for cleanup
 const GLOBAL_ID_TOKEN_KEY = 'contextlens.global.idToken';
 const GLOBAL_REFRESH_TOKEN_KEY = 'contextlens.global.refreshToken';
 const GLOBAL_UID_KEY = 'contextlens.global.uid';
@@ -83,10 +83,10 @@ export class AuthManager implements vscode.UriHandler {
       await this.context.secrets.store(SECRET_REFRESH_TOKEN_KEY, exchangeResult.refreshToken);
       await this.context.secrets.store(SECRET_UID_KEY, exchangeResult.localId);
 
-      // KI-001: Mirror to globalState for cross-workspace persistence
-      await this.context.globalState.update(GLOBAL_ID_TOKEN_KEY, exchangeResult.idToken);
-      await this.context.globalState.update(GLOBAL_REFRESH_TOKEN_KEY, exchangeResult.refreshToken);
-      await this.context.globalState.update(GLOBAL_UID_KEY, exchangeResult.localId);
+      // Clean up any leaked plaintext tokens from earlier versions
+      await this.context.globalState.update(GLOBAL_ID_TOKEN_KEY, undefined);
+      await this.context.globalState.update(GLOBAL_REFRESH_TOKEN_KEY, undefined);
+      await this.context.globalState.update(GLOBAL_UID_KEY, undefined);
 
       // Clean up legacy token if present
       await this.context.secrets.delete(SECRET_TOKEN_KEY);
@@ -149,7 +149,7 @@ export class AuthManager implements vscode.UriHandler {
     await this.context.secrets.delete(SECRET_UID_KEY);
     await this.context.secrets.delete(SECRET_TOKEN_KEY); // legacy cleanup
 
-    // KI-001: Clear globalState mirror too
+    // Clean up any leaked plaintext tokens
     await this.context.globalState.update(GLOBAL_ID_TOKEN_KEY, undefined);
     await this.context.globalState.update(GLOBAL_REFRESH_TOKEN_KEY, undefined);
     await this.context.globalState.update(GLOBAL_UID_KEY, undefined);
@@ -173,11 +173,11 @@ export class AuthManager implements vscode.UriHandler {
       return { uid, token: idToken };
     }
 
-    // 2. KI-001: Fallback to globalState (survives workspace switches)
+    // 2. Migrate any plaintext tokens that might have been leaked in older versions
     const globalToken = this.context.globalState.get<string>(GLOBAL_ID_TOKEN_KEY);
     const globalUid = this.context.globalState.get<string>(GLOBAL_UID_KEY);
     if (globalToken && globalUid) {
-      // Re-hydrate SecretStorage from globalState so future reads are fast
+      // Migrate to SecretStorage
       await this.context.secrets.store(SECRET_ID_TOKEN_KEY, globalToken);
       await this.context.secrets.store(SECRET_UID_KEY, globalUid);
 
@@ -186,7 +186,12 @@ export class AuthManager implements vscode.UriHandler {
         await this.context.secrets.store(SECRET_REFRESH_TOKEN_KEY, globalRefresh);
       }
 
-      console.log('[ContextLens] Auth re-hydrated from globalState (KI-001).');
+      // Delete plaintext leaks
+      await this.context.globalState.update(GLOBAL_ID_TOKEN_KEY, undefined);
+      await this.context.globalState.update(GLOBAL_REFRESH_TOKEN_KEY, undefined);
+      await this.context.globalState.update(GLOBAL_UID_KEY, undefined);
+
+      console.log('[ContextLens] Auth migrated from globalState to SecretStorage.');
       return { uid: globalUid, token: globalToken };
     }
 
@@ -247,9 +252,9 @@ export class AuthManager implements vscode.UriHandler {
       await this.context.secrets.store(SECRET_ID_TOKEN_KEY, result.id_token);
       await this.context.secrets.store(SECRET_REFRESH_TOKEN_KEY, result.refresh_token);
 
-      // KI-001: Mirror refreshed tokens to globalState
-      await this.context.globalState.update(GLOBAL_ID_TOKEN_KEY, result.id_token);
-      await this.context.globalState.update(GLOBAL_REFRESH_TOKEN_KEY, result.refresh_token);
+      // Clean up any plaintext leaks
+      await this.context.globalState.update(GLOBAL_ID_TOKEN_KEY, undefined);
+      await this.context.globalState.update(GLOBAL_REFRESH_TOKEN_KEY, undefined);
 
       return true;
     } catch (err) {
@@ -268,7 +273,7 @@ export class AuthManager implements vscode.UriHandler {
     await this.context.secrets.delete(SECRET_UID_KEY);
     await this.context.secrets.delete(SECRET_TOKEN_KEY); // legacy
 
-    // KI-001: Clear globalState too
+    // Clean up any plaintext leaks
     await this.context.globalState.update(GLOBAL_ID_TOKEN_KEY, undefined);
     await this.context.globalState.update(GLOBAL_REFRESH_TOKEN_KEY, undefined);
     await this.context.globalState.update(GLOBAL_UID_KEY, undefined);

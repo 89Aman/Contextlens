@@ -6,6 +6,17 @@ const { callGemini } = require('../services/ai');
 const { explainDiffTemplate, branchSummaryTemplate } = require('../prompts');
 const { typedError, mapError } = require('../lib/errors');
 const { redactText, redactDeep } = require('../lib/redaction');
+const { auditLog } = require('../middleware/auditLog');
+const { aiLimiter } = require('../middleware/rateLimiter');
+const {
+  createProjectRules,
+  createEpisodeRules,
+  logCallRules,
+  explainRules,
+  summarizeRules,
+  searchRules,
+  closeEpisodeRules,
+} = require('../middleware/validate');
 
 /**
  * Extracts structured data from an AI response or uses a fallback function if parsing fails.
@@ -34,15 +45,17 @@ function structuredOrFallback(response, fallback) {
  * @param {string} [req.body.repoUrl] - The repository URL.
  * @param {express.Response} res - The response object.
  */
-router.post('/projects/create', async (req, res) => {
+router.post('/projects/create', createProjectRules, async (req, res) => {
   const { uid } = req.user;
   const { name, repoUrl, localWorkspaceName, defaultBranch, settings } = req.body;
-  if (!name) return res.status(400).json(typedError('invalid', 'Missing project name'));
+  
   try {
     const id = randomUUID();
     const ref = db.collection('users').doc(uid).collection('projects').doc(id);
     const now = new Date();
     await ref.set({ name, repoUrl: repoUrl || null, localWorkspaceName: localWorkspaceName || null, defaultBranch: defaultBranch || 'main', createdAt: now, updatedAt: now, settings: settings || {} });
+    
+    auditLog('DATA_WRITE', { action: 'create_project', projectId: id }, req);
     return res.json({ projectId: id });
   } catch (err) {
     console.error("FULL ERROR:", err);
@@ -59,15 +72,17 @@ router.post('/projects/create', async (req, res) => {
  * @param {string} req.body.branchName - The name of the current branch.
  * @param {express.Response} res - The response object.
  */
-router.post('/episodes/create', async (req, res) => {
+router.post('/episodes/create', createEpisodeRules, async (req, res) => {
   const { uid } = req.user;
   const { projectId, label, branchName } = req.body;
-  if (!projectId || !branchName) return res.status(400).json(typedError('invalid', 'Missing projectId or branchName'));
+  
   try {
     const episodeId = randomUUID();
     const now = new Date();
     const epRef = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes').doc(episodeId);
     await epRef.set({ label: label || null, branchName, status: 'open', startedAt: now, endedAt: null, callCount: 0, changedFiles: [], latestDiffHash: null, manualNotes: null });
+    
+    auditLog('DATA_WRITE', { action: 'create_episode', projectId, episodeId }, req);
     return res.json({ episodeId });
   } catch (err) {
     return res.status(500).json(typedError('write_failure', err.message));
@@ -84,11 +99,10 @@ router.post('/episodes/create', async (req, res) => {
  * @param {string} req.body.promptText - The prompt text sent to the model.
  * @param {express.Response} res - The response object.
  */
-router.post('/calls/log', async (req, res) => {
+router.post('/calls/log', aiLimiter, logCallRules, async (req, res) => {
   const { uid } = req.user;
   const payload = req.body;
   const { projectId, episodeId, promptText, modelName, source, modelResponse } = payload;
-  if (!projectId || !episodeId || !promptText) return res.status(400).json(typedError('invalid', 'Missing required fields'));
   
   const skipAI = (source === 'git_commit' || source === 'manual_log');
   const started = Date.now();
@@ -140,6 +154,7 @@ router.post('/calls/log', async (req, res) => {
       t.update(epRef, { callCount: prev + 1 });
     });
 
+    auditLog('DATA_WRITE', { action: 'log_call', projectId, episodeId, callId }, req);
     return res.json({ callId, modelName: aiResp.model, modelResponse: aiResp.text, latencyMs: skipAI ? 0 : latencyMs, saved: true });
   } catch (err) {
     const mapped = mapError(err);
@@ -158,11 +173,10 @@ router.post('/calls/log', async (req, res) => {
  * @param {string} req.body.diffHash - The hash of the diff to explain.
  * @param {express.Response} res - The response object.
  */
-router.post('/episodes/explain', async (req, res) => {
+router.post('/episodes/explain', aiLimiter, explainRules, async (req, res) => {
   const { uid } = req.user;
   const { projectId, episodeId, diffHash, changedFiles } = req.body;
-  if (!projectId || !episodeId) return res.status(400).json(typedError('invalid', 'Missing projectId or episodeId'));
-  if (!diffHash) return res.status(400).json(typedError('invalid', 'Missing diffHash'));
+  
   try {
     const cacheRef = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes').doc(episodeId).collection('cache').doc(diffHash);
     const cached = await cacheRef.get();
@@ -178,6 +192,8 @@ router.post('/episodes/explain', async (req, res) => {
       checks: Array.isArray(result.checks) ? result.checks : [],
     };
     await cacheRef.set({ createdAt: new Date(), result: normalized });
+    
+    auditLog('DATA_ACCESS', { action: 'explain_episode', projectId, episodeId, diffHash }, req);
     return res.json(normalized);
   } catch (err) {
     const mapped = mapError(err);
@@ -195,20 +211,23 @@ router.post('/episodes/explain', async (req, res) => {
  * @param {Array} req.body.episodes - The list of episodes to summarize.
  * @param {express.Response} res - The response object.
  */
-router.post('/branches/summarize', async (req, res) => {
+router.post('/branches/summarize', aiLimiter, summarizeRules, async (req, res) => {
   const { uid } = req.user;
   const { projectId, branchName, episodes } = req.body;
-  if (!projectId || !branchName) return res.status(400).json(typedError('invalid', 'Missing projectId or branchName'));
+  
   try {
     const episodesSummaryList = (episodes || []).map((e) => e.episodeSummary || e.label || '').join('\n');
     const prompt = branchSummaryTemplate({ episodesSummaryList });
     const aiResp = await callGemini(prompt, 'gemini-1.5-pro', { responseMimeType: 'application/json', maxOutputTokens: 1024 });
     const result = structuredOrFallback(aiResp, (text) => ({ pr_summary: text, key_changes: [], review_risks: [] }));
-    return res.json({
+    const responseData = {
       pr_summary: result.pr_summary || aiResp.text,
       key_changes: Array.isArray(result.key_changes) ? result.key_changes : [],
       review_risks: Array.isArray(result.review_risks) ? result.review_risks : [],
-    });
+    };
+    
+    auditLog('DATA_ACCESS', { action: 'summarize_branch', projectId, branchName }, req);
+    return res.json(responseData);
   } catch (err) {
     const mapped = mapError(err);
     return res.status(mapped.status).json(typedError('summarize_failed', mapped.message));
@@ -224,10 +243,10 @@ router.post('/branches/summarize', async (req, res) => {
  * @param {string} req.body.q - The search query.
  * @param {express.Response} res - The response object.
  */
-router.post('/search', async (req, res) => {
+router.post('/search', searchRules, async (req, res) => {
   const { uid } = req.user;
   const { projectId, q, filters } = req.body;
-  if (!projectId) return res.status(400).json(typedError('invalid', 'Missing projectId'));
+  
   try {
     // Naive search: look through episodes and calls for matching text in labels, prompts, responses.
     const episodesCol = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes');
@@ -242,6 +261,8 @@ router.post('/search', async (req, res) => {
         if (!q || JSON.stringify(cd).toLowerCase().includes(q.toLowerCase())) results.calls.push({ id: c.id, episodeId: ep.id, ...cd });
       }
     }
+    
+    auditLog('DATA_ACCESS', { action: 'search', projectId, queryLength: q ? q.length : 0 }, req);
     return res.json(results);
   } catch (err) {
     const mapped = mapError(err);
@@ -258,13 +279,15 @@ router.post('/search', async (req, res) => {
  * @param {string} req.body.episodeId - The episode ID.
  * @param {express.Response} res - The response object.
  */
-router.post('/episodes/close', async (req, res) => {
+router.post('/episodes/close', closeEpisodeRules, async (req, res) => {
   const { uid } = req.user;
   const { projectId, episodeId } = req.body;
-  if (!projectId || !episodeId) return res.status(400).json(typedError('invalid', 'Missing projectId or episodeId'));
+  
   try {
     const epRef = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes').doc(episodeId);
     await epRef.update({ status: 'closed', endedAt: new Date() });
+    
+    auditLog('DATA_WRITE', { action: 'close_episode', projectId, episodeId }, req);
     return res.json({ closed: true });
   } catch (err) {
     const mapped = mapError(err);

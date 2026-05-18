@@ -1,18 +1,35 @@
+require('dotenv').config();
+require('./sentry'); // Must be required before any other module
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const morgan = require('morgan');
+const helmet = require('helmet');
 const api = require('./routes/api');
 const { requireAuth } = require('./middleware/auth');
+const { requestId } = require('./middleware/requestId');
+const { validateEnv } = require('./lib/envCheck');
+const { authLimiter, apiLimiter } = require('./middleware/rateLimiter');
+const { auditLog } = require('./middleware/auditLog');
+
+// Validate environment variables on boot
+validateEnv();
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
-// Enable CORS for all routes
-app.use(cors());
+app.use(helmet());
+app.use(requestId);
 
-app.use(morgan('dev'));
+// Enable CORS with restrictive options
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'vscode-webview://*'],
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(bodyParser.json({ limit: '1mb' }));
 
 // Attach a small health route
@@ -168,9 +185,9 @@ app.get('/api/auth/login', async (req, res) => {
         <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"><\/script>
         <script>
           firebase.initializeApp({
-            apiKey: "AIzaSyAQ2U7k1Z1h0myROPoj9upUMxJ-r_ZZ3ME",
-            authDomain: "contextlens-backend-001.firebaseapp.com",
-            projectId: "contextlens-backend-001",
+            apiKey: "${process.env.FIREBASE_API_KEY}",
+            authDomain: "${process.env.FIREBASE_AUTH_DOMAIN}",
+            projectId: "${process.env.FIREBASE_PROJECT_ID}",
           });
 
           const callbackUrl = ${JSON.stringify(callbackUrl)};
@@ -254,7 +271,7 @@ app.get('/api/auth/login', async (req, res) => {
  * @param {string} req.body.idToken - The Firebase ID token received from client-side sign-in.
  * @param {express.Response} res - The response object.
  */
-app.post('/api/auth/exchange', async (req, res) => {
+app.post('/api/auth/exchange', authLimiter, async (req, res) => {
   try {
     const { idToken } = req.body;
     if (!idToken) {
@@ -296,7 +313,10 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/', requireAuth, api);
+app.use('/', requireAuth, apiLimiter, api);
+
+// The error handler must be registered before any other error middleware and after all controllers
+require('./sentry').setupExpressErrorHandler(app);
 
 /**
  * Global error handler for the Express application.
@@ -304,6 +324,7 @@ app.use('/', requireAuth, api);
  */
 app.use((err, req, res, next) => {
   console.error('Unhandled server error:', err);
+  auditLog('VALIDATION_ERROR', { error: err.message, type: 'unhandled_exception' }, req);
   if (res.headersSent) return next(err);
   return res.status(500).json({ error: { code: 'internal_error', message: 'Unexpected server error' } });
 });

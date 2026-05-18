@@ -4,8 +4,14 @@
 const admin = require('firebase-admin');
 
 if (!admin.apps.length) {
+  if (!process.env.GOOGLE_CLOUD_PROJECT && process.env.GCLOUD_PROJECT) {
+    process.env.GOOGLE_CLOUD_PROJECT = process.env.GCLOUD_PROJECT;
+  }
+  if (!process.env.GOOGLE_CLOUD_PROJECT) {
+    console.error('Missing GOOGLE_CLOUD_PROJECT environment variable');
+  }
   admin.initializeApp({
-    projectId: process.env.GOOGLE_CLOUD_PROJECT || 'contextlens-backend-001'
+    projectId: process.env.GOOGLE_CLOUD_PROJECT
   });
 }
 
