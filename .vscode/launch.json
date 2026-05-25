@@ -1,0 +1,63 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run VS Code Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/vscode-extension"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/vscode-extension/dist/**/*.js"
+      ]
+    },
+    {
+      "name": "Test VS Code Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/vscode-extension",
+        "--extensionTestsPath=${workspaceFolder}/vscode-extension/out/test/suite/index"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/vscode-extension/out/**/*.js",
+        "${workspaceFolder}/vscode-extension/dist/**/*.js"
+      ]
+    },
+    {
+      "name": "Run Backend Server",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/index.js",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "env": {
+        "NODE_ENV": "development"
+      }
+    },
+    {
+      "name": "Launch Dashboard (Chrome)",
+      "request": "launch",
+      "type": "chrome",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/contextlens-dashboard/src"
+    },
+    {
+      "name": "Launch Dashboard (Edge)",
+      "request": "launch",
+      "type": "msedge",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/contextlens-dashboard/src"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Run Extension + Backend",
+      "configurations": ["Run Backend Server", "Run VS Code Extension"]
+    }
+  ]
+}
