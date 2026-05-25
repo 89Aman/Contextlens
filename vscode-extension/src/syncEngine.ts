@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// ── Types ──────────────────────────────────────────────────────────────────
+
 export interface QueuedItem {
   id: string;
   type: 'call' | 'episode_update' | 'changed_files' | 'episode_close' | 'episode_create';
@@ -11,7 +13,20 @@ export interface QueuedItem {
   retries: number;
   projectId: string;
   episodeId?: string;
+  /** Idempotency key for dedup on the backend. */
+  idempotencyKey: string;
 }
+
+/** Sync engine operational states. */
+export type SyncState =
+  | 'idle'         // No items in queue
+  | 'pending'      // Items queued, waiting for next flush
+  | 'syncing'      // Actively sending items
+  | 'synced'       // Queue empty after successful flush
+  | 'retrying'     // Retrying failed items
+  | 'offline'      // Network unreachable
+  | 'paused-auth'  // Auth expired, waiting for re-auth
+  | 'failed';      // All retries exhausted
 
 /**
  * SyncEngine is a background worker that ensures all development activity (AI calls, episodes)
@@ -20,8 +35,8 @@ export interface QueuedItem {
  * Lifecycle:
  * 1. Items are enqueued via `enqueue()`.
  * 2. Enqueued items are immediately persisted to disk (`cl_queue.json`) to survive crashes.
- * 3. Every 30s (`FLUSH_INTERVAL_MS`), the engine attempts to "flush" the queue.
- * 4. A connectivity timer checks the backend health every 15s (`CONNECTIVITY_CHECK_MS`).
+ * 3. Flush interval is dynamic: faster when queue is large.
+ * 4. A connectivity timer checks the backend health every 15s.
  * 
  * Retry Strategy:
  * - Each item is tried up to 5 times (`MAX_RETRIES`).
@@ -29,6 +44,10 @@ export interface QueuedItem {
  * - While offline, flushing is paused to save resources.
  * - Once connectivity is restored, the queue is automatically flushed.
  * - Items that continue to fail after max retries are permanently discarded.
+ *
+ * Queue Corruption Recovery:
+ * - If the persisted queue file is corrupt, the engine backs it up and starts fresh.
+ * - A notification is shown to the user.
  */
 export class SyncEngine {
   private queue: QueuedItem[] = [];
@@ -39,13 +58,18 @@ export class SyncEngine {
   private persistPath: string = '';
   private context: vscode.ExtensionContext;
   private apiClient: any;
+  private _state: SyncState = 'idle';
 
-  private readonly FLUSH_INTERVAL_MS = 30_000;     // flush every 30s
-  private readonly CONNECTIVITY_CHECK_MS = 15_000; // check online every 15s
-  private readonly CHUNK_SIZE = 5;                 // max 5 items per flush
-  private readonly MAX_RETRIES = 5;                // drop after 5 failures
-  private readonly MAX_QUEUE_SIZE = 200;           // max buffered items
-  private readonly ITEM_DELAY_MS = 200;            // delay between items
+  // Callbacks for state observers (status bar, etc.)
+  private stateListeners: Array<(state: SyncState) => void> = [];
+
+  private readonly BASE_FLUSH_MS = 30_000;           // flush every 30s normally
+  private readonly FAST_FLUSH_MS = 5_000;            // flush every 5s when queue > 10
+  private readonly CONNECTIVITY_CHECK_MS = 15_000;   // check online every 15s
+  private readonly CHUNK_SIZE = 5;                   // max 5 items per flush
+  private readonly MAX_RETRIES = 5;                  // drop after 5 failures
+  private readonly MAX_QUEUE_SIZE = 200;             // max buffered items
+  private readonly ITEM_DELAY_MS = 200;              // delay between items
 
   /**
    * Creates a new SyncEngine instance.
@@ -79,14 +103,13 @@ export class SyncEngine {
 
   // ─── PUBLIC API ─────────────────────────────────────────
 
-  // Add item to queue — returns immediately, never blocks
   /**
    * Adds an item to the synchronization queue.
    * Items are persisted to disk immediately to prevent data loss.
    * @param item The request details (type, endpoint, payload, etc.)
    */
   enqueue(
-    item: Omit<QueuedItem, 'id' | 'createdAt' | 'retries'>
+    item: Omit<QueuedItem, 'id' | 'createdAt' | 'retries' | 'idempotencyKey'>
   ): void {
     // Drop oldest if full
     if (this.queue.length >= this.MAX_QUEUE_SIZE) {
@@ -96,17 +119,19 @@ export class SyncEngine {
     this.queue.push({
       ...item,
       id: uid(),
+      idempotencyKey: generateIdempotencyKey(),
       createdAt: Date.now(),
       retries: 0,
     });
 
     // Save to disk immediately
-    // so data survives VS Code closing before flush
     this.saveToDisk();
+    this.updateState();
+
+    // Switch to fast flush if queue is growing
+    this.adjustFlushInterval();
   }
 
-  // Force flush — call before Gemini button actions
-  // so episode state is current before Gemini reads it
   /**
    * Triggers an immediate synchronization of the queue if online and not already flushing.
    */
@@ -115,12 +140,23 @@ export class SyncEngine {
     await this.flush();
   }
 
-  // Status for status bar
-  getStatus(): { pending: number; isOnline: boolean } {
+  /** Status for status bar and UI consumers. */
+  getStatus(): { pending: number; isOnline: boolean; state: SyncState } {
     return {
       pending: this.queue.length,
       isOnline: this.isOnline,
+      state: this._state,
     };
+  }
+
+  /** Current sync state. */
+  get state(): SyncState {
+    return this._state;
+  }
+
+  /** Subscribe to state changes. */
+  onStateChange(listener: (state: SyncState) => void): void {
+    this.stateListeners.push(listener);
   }
 
   // ─── FLUSH ──────────────────────────────────────────────
@@ -134,6 +170,7 @@ export class SyncEngine {
     if (!this.isOnline) return;
 
     this.isFlushing = true;
+    this.setState('syncing');
     const successfulIds = new Set<string>();
     const failedPermanentlyIds = new Set<string>();
 
@@ -143,7 +180,9 @@ export class SyncEngine {
 
       for (const item of chunk) {
         try {
-          await this.apiClient.post(item.endpoint, item.payload);
+          await this.apiClient.post(item.endpoint, item.payload, {
+            headers: { 'X-Idempotency-Key': item.idempotencyKey },
+          });
           successfulIds.add(item.id);
         } catch (err: any) {
           item.retries++;
@@ -153,15 +192,21 @@ export class SyncEngine {
             failedPermanentlyIds.add(item.id);
           }
 
+          // Auth error — pause syncing until re-auth
+          if (isAuthError(err)) {
+            this.setState('paused-auth');
+            break;
+          }
+
           // Network error — go offline, stop sending
           if (isNetworkError(err)) {
             this.isOnline = false;
+            this.setState('offline');
             break;
           }
         }
 
         // Small delay between each item
-        // Prevents hammering the backend
         await sleep(this.ITEM_DELAY_MS);
       }
 
@@ -175,6 +220,8 @@ export class SyncEngine {
     } finally {
       this.isFlushing = false;
       this.saveToDisk();
+      this.updateState();
+      this.adjustFlushInterval();
     }
   }
 
@@ -185,8 +232,24 @@ export class SyncEngine {
       if (this.queue.length === 0) return;
       if (!this.isOnline) return;
       if (this.isFlushing) return;
+      if (this._state === 'paused-auth') return;
       await this.flush();
-    }, this.FLUSH_INTERVAL_MS);
+    }, this.BASE_FLUSH_MS);
+  }
+
+  /** Dynamically adjust flush interval based on queue size. */
+  private adjustFlushInterval(): void {
+    if (this.flushTimer) clearInterval(this.flushTimer);
+
+    const interval = this.queue.length > 10 ? this.FAST_FLUSH_MS : this.BASE_FLUSH_MS;
+
+    this.flushTimer = setInterval(async () => {
+      if (this.queue.length === 0) return;
+      if (!this.isOnline) return;
+      if (this.isFlushing) return;
+      if (this._state === 'paused-auth') return;
+      await this.flush();
+    }, interval);
   }
 
   private startConnectivityTimer(): void {
@@ -200,9 +263,32 @@ export class SyncEngine {
           `ContextLens: Back online — syncing ${this.queue.length} buffered items...`,
           4000
         );
+        this.setState('pending');
         await this.flush();
       }
     }, this.CONNECTIVITY_CHECK_MS);
+  }
+
+  // ─── STATE MANAGEMENT ──────────────────────────────────
+
+  private setState(state: SyncState): void {
+    if (this._state === state) return;
+    this._state = state;
+    for (const listener of this.stateListeners) {
+      try { listener(state); } catch { /* don't crash on listener errors */ }
+    }
+  }
+
+  private updateState(): void {
+    if (!this.isOnline) {
+      this.setState('offline');
+    } else if (this.queue.length === 0) {
+      this.setState(this._state === 'syncing' ? 'synced' : 'idle');
+    } else if (this.queue.some(q => q.retries > 0)) {
+      this.setState('retrying');
+    } else {
+      this.setState('pending');
+    }
   }
 
   // ─── DISK PERSISTENCE ───────────────────────────────────
@@ -222,7 +308,7 @@ export class SyncEngine {
         'utf8'
       );
     } catch {
-      // Silent fail
+      // Silent fail — don't crash extension over disk write
     }
   }
 
@@ -239,8 +325,22 @@ export class SyncEngine {
           4000
         );
       }
-    } catch {
-      // Corrupt file — ignore
+    } catch (parseErr) {
+      // ── Queue Corruption Recovery ──────────────────────────
+      // Backup the corrupt file, start fresh, notify user.
+      console.warn('[ContextLens] Queue file corrupted. Backing up and starting fresh.');
+      try {
+        const backupPath = this.persistPath + `.backup.${Date.now()}`;
+        fs.copyFileSync(this.persistPath, backupPath);
+        fs.writeFileSync(this.persistPath, '[]', 'utf8');
+      } catch {
+        // Can't even backup — just wipe
+        try { fs.writeFileSync(this.persistPath, '[]', 'utf8'); } catch { /* give up */ }
+      }
+      this.queue = [];
+      vscode.window.showWarningMessage(
+        'ContextLens: Sync queue was corrupted and has been reset. A backup was saved.'
+      );
     }
   }
 
@@ -257,7 +357,11 @@ export class SyncEngine {
 // ─── HELPERS ──────────────────────────────────────────────
 
 function uid(): string {
-  return `\${Date.now()}-\${Math.random().toString(36).slice(2, 8)}`;
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function generateIdempotencyKey(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -274,6 +378,18 @@ function isNetworkError(err: any): boolean {
     msg.includes('etimedout') ||
     msg.includes('failed to fetch') ||
     msg.includes('net::err')
+  );
+}
+
+function isAuthError(err: any): boolean {
+  const msg = (err?.message || '').toLowerCase();
+  const code = (err?.code || '').toUpperCase();
+  return (
+    code === 'AUTH_ERROR' ||
+    code === 'AUTH_EXPIRED' ||
+    msg.includes('session expired') ||
+    msg.includes('not authenticated') ||
+    msg.includes('sign in required')
   );
 }
 
