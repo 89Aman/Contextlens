@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ApiClient } from './apiClient';
 import { GitContext } from './gitContext';
 import { EpisodeStore } from './episodeStore';
+import { getAuthManager } from './auth';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'contextlens.chatView';
@@ -11,10 +12,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   constructor(private readonly _extensionUri: vscode.Uri) {
     // Fetch provider name in the background
     this._refreshProviderName();
+
+    // Listen for auth state changes to update the provider name
+    try {
+      const authManager = getAuthManager();
+      authManager.onDidSignIn(() => {
+        this._refreshProviderName();
+      });
+      authManager.onDidSignOut(() => {
+        this._providerName = 'Gemini';
+        if (this._view) {
+          this._view.webview.postMessage({ type: 'setProvider', value: this._providerName });
+        }
+      });
+    } catch (err) {
+      console.error('[ContextLens] Failed to register auth listeners in ChatViewProvider:', err);
+    }
   }
 
   private async _refreshProviderName(): Promise<void> {
     try {
+      const authManager = getAuthManager();
+      const authenticated = await authManager.isAuthenticated();
+      if (!authenticated) {
+        return;
+      }
       const settings = await ApiClient.getSettings();
       switch (settings.aiProvider) {
         case 'openai': this._providerName = 'OpenAI'; break;
@@ -83,6 +105,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
             break;
           }
+        case 'openDashboard':
+          vscode.commands.executeCommand('contextlens.openDashboard');
+          break;
       }
     });
   }
@@ -251,6 +276,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             color: var(--vscode-descriptionForeground, #888);
             text-align: right;
           }
+
+          .dashboard-link {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 8px;
+            padding: 6px;
+            font-size: 11px;
+            color: var(--vscode-textLink-foreground, #3794ff);
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.15s;
+          }
+          .dashboard-link:hover {
+            background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.04));
+          }
         </style>
       </head>
       <body>
@@ -264,6 +306,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             <button id="retry-btn">↻ Retry</button>
           </div>
           <div class="hint">Ctrl+Enter to send</div>
+          <div class="dashboard-link" id="open-dashboard" title="Open web dashboard">
+            ◎ Open Dashboard
+          </div>
         </div>
 
         <script>
@@ -323,6 +368,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               e.preventDefault();
               sendMessage();
             }
+          });
+
+          document.getElementById('open-dashboard').addEventListener('click', () => {
+            vscode.postMessage({ type: 'openDashboard' });
           });
 
           window.addEventListener('message', event => {

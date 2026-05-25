@@ -2,10 +2,11 @@
   "name": "contextlens",
   "displayName": "ContextLens",
   "description": "AI-driven developer companion for capturing coding intent and context.",
-  "version": "0.0.1",
-  "publisher": "ContextLens",
+  "version": "0.1.41",
+  "publisher": "Noventra-Labs",
   "author": {
-    "name": "89Aman"
+    "name": "Aman Sharma",
+    "email": "Shasarita23@gmail.com"
   },
   "license": "MIT",
   "repository": {
@@ -61,7 +62,8 @@
       },
       {
         "command": "contextlens.openDashboard",
-        "title": "ContextLens: Open Dashboard"
+        "title": "ContextLens: Open Dashboard",
+        "icon": "$(globe)"
       },
       {
         "command": "contextlens.openDashboardEpisode",
@@ -92,13 +94,13 @@
     "views": {
       "contextlens-explorer": [
         {
-          "icon":"resources/state-header.svg",
+          "icon": "resources/state-header.svg",
           "id": "contextlens.stateTree",
           "name": "State Header",
           "type": "tree"
         },
         {
-          "icon":"resources/chat-icon.svg",
+          "icon": "resources/chat-icon.svg",
           "id": "contextlens.chatView",
           "name": "AI Chat",
           "type": "webview"
@@ -133,6 +135,15 @@
           "description": "The base URL for the ContextLens backend API."
         }
       }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "contextlens.openDashboard",
+          "when": "view == contextlens.stateTree || view == contextlens.chatView",
+          "group": "navigation"
+        }
+      ]
     }
   },
   "scripts": {

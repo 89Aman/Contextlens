@@ -187,8 +187,10 @@ export class SyncEngine {
         } catch (err: any) {
           item.retries++;
 
-          // Drop permanently after max retries
-          if (item.retries >= this.MAX_RETRIES) {
+          const isNotFoundError = err.message && (err.message.includes('not found') || err.message.includes('deleted'));
+
+          // Drop permanently after max retries or if the resource was already deleted/not found on server (404)
+          if (item.retries >= this.MAX_RETRIES || isNotFoundError) {
             failedPermanentlyIds.add(item.id);
           }
 

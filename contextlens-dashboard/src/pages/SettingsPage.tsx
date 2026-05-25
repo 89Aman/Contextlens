@@ -1,10 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Code, ExternalLink, Key, Check } from 'lucide-react'
+import { Code, ExternalLink, Key, Check, Loader2, Shield, Sparkles, ChevronDown, LogOut, User, Settings } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useProjects, useUserSettings } from '../lib/firestoreHooks'
 import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
+
+type AiProvider = 'gemini' | 'openai' | 'anthropic' | 'none'
+
+const PROVIDER_META: Record<AiProvider, { label: string; placeholder: string; hint: string }> = {
+  none: { label: 'Default (Gemini)', placeholder: '', hint: '' },
+  gemini: { label: 'Google Gemini', placeholder: 'AIzaSy...', hint: 'Sent directly to Google — never logged.' },
+  openai: { label: 'OpenAI', placeholder: 'sk-...', hint: 'Sent directly to OpenAI — never logged.' },
+  anthropic: { label: 'Anthropic', placeholder: 'sk-ant-...', hint: 'Sent directly to Anthropic — never logged.' },
+}
 
 export function SettingsPage() {
   const { user, signOut } = useAuth()
@@ -12,15 +21,11 @@ export function SettingsPage() {
   const { data: projects } = useProjects(user?.uid ?? '')
   const { data: userSettings } = useUserSettings(user?.uid ?? '')
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
-  
-  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai' | 'anthropic' | 'none'>('none')
-  const [apiKeys, setApiKeys] = useState({
-    gemini: '',
-    openai: '',
-    anthropic: ''
-  })
-  const [isSavingSettings, setIsSavingSettings] = useState(false)
-  const [savedMessage, setSavedMessage] = useState('')
+
+  const [aiProvider, setAiProvider] = useState<AiProvider>('none')
+  const [apiKeys, setApiKeys] = useState({ gemini: '', openai: '', anthropic: '' })
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
     if (userSettings) {
@@ -28,331 +33,366 @@ export function SettingsPage() {
       setApiKeys({
         gemini: userSettings.geminiApiKey || '',
         openai: userSettings.openaiApiKey || '',
-        anthropic: userSettings.anthropicApiKey || ''
+        anthropic: userSettings.anthropicApiKey || '',
       })
     }
   }, [userSettings])
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId)
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
     await signOut()
     navigate('/login')
-  }
+  }, [signOut, navigate])
 
-  const handleSaveSettings = async () => {
+  const handleSave = useCallback(async () => {
     if (!user) return
-    setIsSavingSettings(true)
+    setIsSaving(true)
+    setSaveState('idle')
     try {
       await setDoc(doc(db, `users/${user.uid}/settings/global`), {
         aiProvider,
         geminiApiKey: apiKeys.gemini,
         openaiApiKey: apiKeys.openai,
-        anthropicApiKey: apiKeys.anthropic
+        anthropicApiKey: apiKeys.anthropic,
       }, { merge: true })
-      setSavedMessage('Settings saved successfully!')
-      setTimeout(() => setSavedMessage(''), 3000)
+      setSaveState('saved')
+      setTimeout(() => setSaveState('idle'), 3000)
     } catch (err) {
-      console.error("Failed to save settings", err)
+      console.error('Failed to save settings', err)
+      setSaveState('error')
+      setTimeout(() => setSaveState('idle'), 4000)
     } finally {
-      setIsSavingSettings(false)
+      setIsSaving(false)
     }
-  }
+  }, [user, aiProvider, apiKeys])
+
+  const showKeyInput = aiProvider !== 'none'
+  const meta = PROVIDER_META[aiProvider]
 
   return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-textPrimary mb-6">Settings</h1>
+    <div className="max-w-2xl page-enter space-y-8 pb-12">
+      <div>
+        <div className="flex items-center gap-2 mb-1.5">
+          <Settings className="w-5 h-5 text-primary" />
+          <h1 className="text-2xl font-bold text-textPrimary">Settings</h1>
+        </div>
+        <p className="text-xs text-textMuted">
+          Manage your credentials, VS Code integrations, and project preferences.
+        </p>
+      </div>
 
-      {/* Profile section */}
-      <section className="mb-8">
-        <h2 className="text-[11px] font-semibold text-textMuted uppercase tracking-wider mb-3">
-          Profile
-        </h2>
-        <div className="bg-card border border-cardBorder rounded-lg p-5 space-y-4">
+      {/* ── Profile ──────────────────────────────────────────────────── */}
+      <section className="animate-fadeIn" style={{ animationDelay: '40ms' }}>
+        <SectionLabel icon={<User className="w-3.5 h-3.5" />}>Profile</SectionLabel>
+        <div className="bg-card border border-cardBorder rounded-xl p-6 space-y-5 card-glow transition-all duration-200">
           <div className="flex items-center gap-4">
             {user?.photoURL ? (
               <img
                 src={user.photoURL}
                 alt={user.displayName ?? ''}
-                className="w-12 h-12 rounded-full"
+                className="w-12 h-12 rounded-full ring-2 ring-primary/20 ring-offset-2 ring-offset-surface"
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-12 h-12 rounded-full bg-primary/30 flex items-center justify-center text-lg text-primary font-bold">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-primary/5 flex items-center justify-center text-lg text-primary font-bold ring-2 ring-primary/20 ring-offset-2 ring-offset-surface">
                 {user?.displayName?.[0] ?? 'U'}
               </div>
             )}
-            <div>
-              <p className="text-sm font-semibold text-textPrimary">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-textPrimary truncate">
                 {user?.displayName ?? 'Unknown User'}
               </p>
-              <p className="text-xs text-textMuted">{user?.email}</p>
+              <p className="text-xs text-textMuted truncate">{user?.email}</p>
             </div>
           </div>
 
-          <div className="border-t border-cardBorder pt-4">
+          <div className="border-t border-cardBorder/60 pt-4 flex justify-end">
             <button
               id="sign-out-btn"
               onClick={handleSignOut}
-              className="px-4 py-2 rounded-md border border-red-700/60 text-red-400 text-sm font-medium hover:bg-red-900/20 hover:border-red-600 transition-all"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-red-500/20 text-red-400 text-sm font-medium
+                         hover:bg-red-500/10 hover:border-red-500/40 active:scale-[0.98]
+                         transition-all duration-150 ease-out"
             >
+              <LogOut className="w-4 h-4" />
               Sign Out
             </button>
           </div>
         </div>
       </section>
 
-      {/* Integration section */}
-      <section className="mb-8">
-        <h2 className="text-[11px] font-semibold text-textMuted uppercase tracking-wider mb-3">
-          Integrations
-        </h2>
-        <div className="bg-card border border-cardBorder rounded-lg p-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                <Code className="w-6 h-6" />
+      {/* ── Integrations ─────────────────────────────────────────────── */}
+      <section className="animate-fadeIn" style={{ animationDelay: '80ms' }}>
+        <SectionLabel icon={<Code className="w-3.5 h-3.5" />}>Integrations</SectionLabel>
+        <div className="bg-card border border-cardBorder rounded-xl p-6 card-glow transition-all duration-200">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary flex-shrink-0 border border-primary/10">
+                <Code className="w-5 h-5" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-semibold text-textPrimary">VS Code Extension</p>
-                <p className="text-xs text-textMuted">Sync your coding sessions to the cloud</p>
+                <p className="text-xs text-textMuted truncate">Sync coding sessions to the cloud</p>
               </div>
             </div>
             <a
               href={`https://contextlens-backend-001.web.app/api/auth/login?uid=${user?.uid}&callback=vscode://ContextLens.contextlens`}
-              className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-black text-sm font-bold hover:opacity-90 transition-opacity"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-black text-sm font-bold
+                         hover:brightness-110 active:scale-[0.97]
+                         transition-all duration-150 ease-out flex-shrink-0 shadow-lg shadow-primary/10"
             >
-              Connect VS Code
+              Connect
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>
         </div>
       </section>
 
-      {/* AI Provider section */}
-      <section className="mb-8">
-        <h2 className="text-[11px] font-semibold text-textMuted uppercase tracking-wider mb-3">
-          AI Provider Settings
-        </h2>
-        <div className="bg-card border border-cardBorder rounded-lg p-5 space-y-4">
-          <div>
-            <label className="block text-xs text-textMuted mb-1.5">Select AI Provider</label>
-            <select
-              value={aiProvider}
-              onChange={(e) => setAiProvider(e.target.value as any)}
-              className="w-full bg-surface border border-cardBorder rounded-md px-3 py-2 text-sm text-textPrimary focus:outline-none focus:border-primary/60 transition-colors"
-            >
-              <option value="none">Default Server-Side Provider (Gemini)</option>
-              <option value="gemini">Google Gemini (Bring your own key)</option>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-            </select>
+      {/* ── AI Provider ──────────────────────────────────────────────── */}
+      <section className="animate-fadeIn" style={{ animationDelay: '120ms' }}>
+        <SectionLabel icon={<Sparkles className="w-3.5 h-3.5" />}>AI Provider</SectionLabel>
+        <div className="bg-card border border-cardBorder rounded-xl p-6 space-y-5 card-glow transition-all duration-200">
+          {/* Provider selector */}
+          <div className="space-y-1.5">
+            <label className="block text-xs text-textMuted font-medium">Select Provider</label>
+            <div className="relative">
+              <select
+                value={aiProvider}
+                onChange={(e) => setAiProvider(e.target.value as AiProvider)}
+                className="w-full appearance-none bg-white/[0.02] border border-cardBorder/50 rounded-lg px-3.5 py-2.5 pr-10
+                           text-sm text-textPrimary cursor-pointer
+                           focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40
+                           transition-all duration-150"
+              >
+                <option value="none" className="bg-[#161b22]">Default Server-Side Provider (Gemini)</option>
+                <option value="gemini" className="bg-[#161b22]">Google Gemini (Bring your own key)</option>
+                <option value="openai" className="bg-[#161b22]">OpenAI</option>
+                <option value="anthropic" className="bg-[#161b22]">Anthropic</option>
+              </select>
+              <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none opacity-60" />
+            </div>
           </div>
 
-          {aiProvider === 'gemini' && (
-            <div>
-              <label className="block text-xs text-textMuted mb-1.5">Gemini API Key</label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-textMuted">
+          {/* API key input — animated mount */}
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              showKeyInput ? 'max-h-32 opacity-100 mt-2' : 'max-h-0 opacity-0 pointer-events-none'
+            }`}
+          >
+            {showKeyInput && (
+              <div className="space-y-2 pt-1">
+                <label className="block text-xs text-textMuted font-medium">
+                  {meta.label} API Key
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-textMuted/50">
                     <Key className="w-4 h-4" />
                   </div>
                   <input
                     type="password"
-                    value={apiKeys.gemini}
-                    onChange={(e) => setApiKeys({ ...apiKeys, gemini: e.target.value })}
-                    placeholder="AIzaSy..."
-                    className="w-full bg-surface border border-cardBorder rounded-md pl-9 pr-3 py-2 text-sm text-textPrimary focus:outline-none focus:border-primary/60 transition-colors"
+                    value={apiKeys[aiProvider]}
+                    onChange={(e) =>
+                      setApiKeys({ ...apiKeys, [aiProvider]: e.target.value })
+                    }
+                    placeholder={meta.placeholder}
+                    className="w-full bg-white/[0.02] border border-cardBorder/50 rounded-lg pl-10 pr-3.5 py-2.5
+                               text-sm text-textPrimary font-mono
+                               focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40
+                               transition-all duration-150
+                               placeholder:text-textMuted/20"
                   />
                 </div>
+                {meta.hint && (
+                  <p className="text-[11px] text-textMuted/60 flex items-center gap-1.5 ml-0.5">
+                    <Shield className="w-3.5 h-3.5 text-primary/60 flex-shrink-0" />
+                    {meta.hint}
+                  </p>
+                )}
               </div>
-              <p className="text-[11px] text-textMuted mt-1.5">
-                Your key is stored securely and sent directly to Google. It's never logged or persisted.
-              </p>
-            </div>
-          )}
-          {aiProvider === 'openai' && (
-            <div>
-              <label className="block text-xs text-textMuted mb-1.5">OpenAI API Key</label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-textMuted">
-                    <Key className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="password"
-                    value={apiKeys.openai}
-                    onChange={(e) => setApiKeys({ ...apiKeys, openai: e.target.value })}
-                    placeholder="sk-..."
-                    className="w-full bg-surface border border-cardBorder rounded-md pl-9 pr-3 py-2 text-sm text-textPrimary focus:outline-none focus:border-primary/60 transition-colors"
-                  />
-                </div>
-              </div>
-              <p className="text-[11px] text-textMuted mt-1.5">
-                Your key is stored securely and sent directly to OpenAI. It's never logged or persisted.
-              </p>
-            </div>
-          )}
-          {aiProvider === 'anthropic' && (
-            <div>
-              <label className="block text-xs text-textMuted mb-1.5">Anthropic API Key</label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-textMuted">
-                    <Key className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="password"
-                    value={apiKeys.anthropic}
-                    onChange={(e) => setApiKeys({ ...apiKeys, anthropic: e.target.value })}
-                    placeholder="sk-ant-..."
-                    className="w-full bg-surface border border-cardBorder rounded-md pl-9 pr-3 py-2 text-sm text-textPrimary focus:outline-none focus:border-primary/60 transition-colors"
-                  />
-                </div>
-              </div>
-              <p className="text-[11px] text-textMuted mt-1.5">
-                Your key is stored securely and sent directly to Anthropic. It's never logged or persisted.
-              </p>
-            </div>
-          )}
-
-          <div className="border-t border-cardBorder pt-4 flex items-center justify-between">
-            {savedMessage ? (
-              <span className="text-sm text-green-400 flex items-center gap-1.5">
-                <Check className="w-4 h-4" />
-                {savedMessage}
-              </span>
-            ) : (
-              <span />
             )}
-            <button
-              onClick={handleSaveSettings}
-              disabled={isSavingSettings}
-              className="px-4 py-2 rounded-md bg-primary text-black text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+          </div>
+
+          {/* Save bar */}
+          <div className="border-t border-cardBorder/60 pt-4 flex items-center justify-between gap-3">
+            <div
+              className={`text-sm flex items-center gap-1.5 transition-all duration-300 ${
+                saveState === 'saved'
+                  ? 'opacity-100 text-green-400 translate-y-0'
+                  : saveState === 'error'
+                    ? 'opacity-100 text-red-400 translate-y-0'
+                    : 'opacity-0 translate-y-1 pointer-events-none'
+              }`}
             >
-              {isSavingSettings ? 'Saving...' : 'Save Settings'}
+              {saveState === 'saved' && <><Check className="w-4.5 h-4.5" /> Settings saved</>}
+              {saveState === 'error' && <>Failed to save. Try again.</>}
+            </div>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-5 py-2.5 rounded-lg bg-primary text-black text-sm font-bold
+                         hover:brightness-110 active:scale-[0.97]
+                         disabled:opacity-50 disabled:cursor-not-allowed
+                         transition-all duration-150 ease-out
+                         flex items-center gap-2 shadow-lg shadow-primary/10"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                'Save Settings'
+              )}
             </button>
           </div>
         </div>
       </section>
 
-      {/* Project settings section */}
-      <section>
-        <h2 className="text-[11px] font-semibold text-textMuted uppercase tracking-wider mb-3">
-          Project Settings
-        </h2>
-        <div className="bg-card border border-cardBorder rounded-lg p-5 space-y-4">
+      {/* ── Project Settings ─────────────────────────────────────────── */}
+      <section className="animate-fadeIn" style={{ animationDelay: '160ms' }}>
+        <SectionLabel icon={<Shield className="w-3.5 h-3.5" />}>Project Settings</SectionLabel>
+        <div className="bg-card border border-cardBorder rounded-xl p-6 space-y-5 card-glow transition-all duration-200">
           {/* Project selector */}
-          <div>
-            <label className="block text-xs text-textMuted mb-1.5">Select Project</label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="w-full bg-surface border border-cardBorder rounded-md px-3 py-2 text-sm text-textPrimary focus:outline-none focus:border-primary/60 transition-colors"
-            >
-              <option value="">— Choose a project —</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+          <div className="space-y-1.5">
+            <label className="block text-xs text-textMuted font-medium">Select Project</label>
+            <div className="relative">
+              <select
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                className="w-full appearance-none bg-white/[0.02] border border-cardBorder/50 rounded-lg px-3.5 py-2.5 pr-10
+                           text-sm text-textPrimary cursor-pointer
+                           focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40
+                           transition-all duration-150"
+              >
+                <option value="" className="bg-[#161b22]">— Choose a project —</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id} className="bg-[#161b22]">{p.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none opacity-60" />
+            </div>
           </div>
 
-          {selectedProject && (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-textMuted mb-1.5">Project Name</label>
-                  <input
-                    readOnly
-                    value={selectedProject.name}
-                    className="w-full bg-surface/50 border border-cardBorder rounded-md px-3 py-2 text-sm text-textMuted cursor-not-allowed"
+          {/* Project details — animated mount */}
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              selectedProject ? 'max-h-[500px] opacity-100 mt-4' : 'max-h-0 opacity-0 pointer-events-none'
+            }`}
+          >
+            {selectedProject && (
+              <div className="space-y-5 pt-2 border-t border-cardBorder/40">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <ReadOnlyField label="Project Name" value={selectedProject.name} />
+                  <ReadOnlyField label="Default Branch" value={selectedProject.defaultBranch} mono />
+                </div>
+
+                <ReadOnlyField label="Repo URL" value={selectedProject.repoUrl} mono small />
+                <ReadOnlyField
+                  label="Preferred Model"
+                  value={selectedProject.settings?.preferredModel || 'gemini-1.5-pro'}
+                  mono
+                />
+
+                <div className="space-y-3.5 pt-2">
+                  <ToggleDisplay
+                    label="Redaction Enabled"
+                    description="Sensitive data masked in logs"
+                    icon={<Shield className="w-4 h-4" />}
+                    enabled={selectedProject.settings?.redactionEnabled}
+                  />
+                  <ToggleDisplay
+                    label="Auto Summaries"
+                    description="Generate episode summaries automatically"
+                    icon={<Sparkles className="w-4 h-4" />}
+                    enabled={selectedProject.settings?.autoSummariesEnabled}
                   />
                 </div>
-                <div>
-                  <label className="block text-xs text-textMuted mb-1.5">Default Branch</label>
-                  <input
-                    readOnly
-                    value={selectedProject.defaultBranch}
-                    className="w-full bg-surface/50 border border-cardBorder rounded-md px-3 py-2 text-sm text-textMuted cursor-not-allowed"
-                  />
-                </div>
+
+                <p className="text-[11px] text-textMuted/50 border-t border-cardBorder/40 pt-4 text-center sm:text-left">
+                  Project settings are managed via the VS Code extension.
+                </p>
               </div>
-
-              <div>
-                <label className="block text-xs text-textMuted mb-1.5">Repo URL</label>
-                <input
-                  readOnly
-                  value={selectedProject.repoUrl}
-                  className="w-full bg-surface/50 border border-cardBorder rounded-md px-3 py-2 text-xs text-textMuted font-mono cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-textMuted mb-1.5">Preferred Model</label>
-                <input
-                  readOnly
-                  value={selectedProject.settings.preferredModel || 'gemini-1.5-pro'}
-                  className="w-full bg-surface/50 border border-cardBorder rounded-md px-3 py-2 text-sm text-textMuted font-mono cursor-not-allowed"
-                />
-              </div>
-
-              <div className="space-y-3">
-                {/* Redaction toggle (read-only display) */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-textPrimary">Redaction Enabled</p>
-                    <p className="text-xs text-textMuted">Sensitive data masked in logs</p>
-                  </div>
-                  <div
-                    className={`w-10 h-5 rounded-full transition-colors ${
-                      selectedProject.settings.redactionEnabled
-                        ? 'bg-primary'
-                        : 'bg-gray-700'
-                    }`}
-                  >
-                    <div
-                      className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-transform ${
-                        selectedProject.settings.redactionEnabled
-                          ? 'translate-x-5'
-                          : 'translate-x-0.5'
-                      }`}
-                    />
-                  </div>
-                </div>
-
-                {/* Auto summaries toggle (read-only display) */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-textPrimary">Auto Summaries</p>
-                    <p className="text-xs text-textMuted">Generate episode summaries automatically</p>
-                  </div>
-                  <div
-                    className={`w-10 h-5 rounded-full transition-colors ${
-                      selectedProject.settings.autoSummariesEnabled
-                        ? 'bg-primary'
-                        : 'bg-gray-700'
-                    }`}
-                  >
-                    <div
-                      className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-transform ${
-                        selectedProject.settings.autoSummariesEnabled
-                          ? 'translate-x-5'
-                          : 'translate-x-0.5'
-                      }`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-xs text-textMuted border-t border-cardBorder pt-3">
-                Project settings are managed primarily by the VS Code extension.
-              </p>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </section>
+    </div>
+  )
+}
+
+/* ── Shared sub-components ──────────────────────────────────────────── */
+
+function SectionLabel({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
+  return (
+    <h2 className="text-[11px] font-semibold text-textMuted uppercase tracking-wider mb-3 flex items-center gap-1.5 ml-1">
+      {icon && <span className="opacity-80 text-primary">{icon}</span>}
+      {children}
+    </h2>
+  )
+}
+
+function ReadOnlyField({
+  label,
+  value,
+  mono = false,
+  small = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+  small?: boolean
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs text-textMuted font-medium">{label}</label>
+      <div
+        className={`w-full bg-white/[0.01] border border-cardBorder/30 rounded-lg px-3.5 py-2.5
+                    ${small ? 'text-xs' : 'text-sm'} text-textMuted
+                    ${mono ? 'font-mono' : ''}
+                    hover:border-cardBorder/50 transition-colors duration-200
+                    truncate`}
+        title={value}
+      >
+        {value || '—'}
+      </div>
+    </div>
+  )
+}
+
+function ToggleDisplay({
+  label,
+  description,
+  icon,
+  enabled,
+}: {
+  label: string
+  description: string
+  icon: React.ReactNode
+  enabled: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between py-2 px-3 bg-white/[0.01] border border-cardBorder/30 hover:border-cardBorder/50 rounded-lg transition-all duration-200">
+      <div className="flex items-center gap-3">
+        <span className={`${enabled ? 'text-primary' : 'text-textMuted/30'} transition-colors duration-200`}>
+          {icon}
+        </span>
+        <div>
+          <p className="text-sm text-textPrimary font-medium">{label}</p>
+          <p className="text-[11px] text-textMuted/60">{description}</p>
+        </div>
+      </div>
+      <div
+        className={`w-10 h-[22px] rounded-full transition-colors duration-200 relative cursor-default ${
+          enabled ? 'bg-primary shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]' : 'bg-white/[0.06] border border-cardBorder/60'
+        }`}
+      >
+        <div
+          className={`absolute top-[2px] w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200 ease-out ${
+            enabled ? 'translate-x-[20px]' : 'translate-x-[2px]'
+          }`}
+        />
+      </div>
     </div>
   )
 }
