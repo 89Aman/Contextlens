@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import * as https from 'https';
 import * as http from 'http';
 import { getAuthManager } from './auth';
+import { ErrorMapper } from './ErrorMapper';
+import { NotificationService } from './NotificationService';
 
 const API_BASE = 'https://contextlens-backend-001.web.app/api';
 const DASHBOARD_BASE = 'https://contextlens-backend-001.web.app';
@@ -104,7 +106,6 @@ function httpRequest(url: string, options: {
 async function exchangeCustomTokenForIdToken(customToken: string): Promise<{
   idToken: string;
   refreshToken: string;
-  localId: string;
 }> {
   const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${FIREBASE_API_KEY}`;
   const res = await httpRequest(url, {
@@ -180,15 +181,9 @@ async function request<T>(path: string, body?: object): Promise<T> {
     }
 
     if (!token) {
-      // Still no token — surface notification (non-blocking, not a modal)
-      vscode.window.showWarningMessage(
-        'ContextLens: Not authenticated. Please sign in to sync data.',
-        'Sign In'
-      ).then(action => {
-        if (action === 'Sign In') {
-          vscode.commands.executeCommand('contextlens.signIn');
-        }
-      });
+      // Use ErrorMapper + NotificationService instead of raw toast
+      const mapped = ErrorMapper.map({ code: 'AUTH_ERROR' });
+      NotificationService.getInstance().fromMapped(mapped);
       throw new Error('Not authenticated — sign in required.');
     }
   }
@@ -239,7 +234,10 @@ async function request<T>(path: string, body?: object): Promise<T> {
   }
 
   if (res.status >= 400) {
-    throw new Error(parsed?.error?.message || `API error: ${res.status}`);
+    // Parse error code from response and map to user-friendly message
+    const errorCode = parsed?.error?.code || 'INTERNAL_ERROR';
+    const mapped = ErrorMapper.map({ code: errorCode, status: res.status });
+    throw new Error(mapped.message);
   }
 
   return parsed as T;

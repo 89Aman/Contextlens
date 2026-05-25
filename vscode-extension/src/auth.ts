@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { exchangeCustomTokenForIdToken, refreshIdToken } from './apiClient';
 
 // Must match: "<publisher>.<name>" from package.json
-const EXTENSION_ID = 'noventra-Labs.contextlens';
+const EXTENSION_ID = 'ContextLens.contextlens';
 
 const API_BASE = 'https://contextlens-backend-001.web.app/api';
 const SECRET_ID_TOKEN_KEY = 'contextlens.auth.idToken';
@@ -65,12 +65,20 @@ export class AuthManager implements vscode.UriHandler {
    * The `token` here is a Firebase *custom* token. We exchange it for a real ID token.
    */
   async handleUri(uri: vscode.Uri): Promise<void> {
+    // uri.query does NOT include the leading '?', so URLSearchParams handles it directly
     const query = new URLSearchParams(uri.query);
     const uid = query.get('uid');
     const customToken = query.get('token');
 
-    if (!uid || !customToken) {
-      vscode.window.showErrorMessage('ContextLens: Sign-in failed — missing uid or token in callback.');
+    // Guard against the literal string 'undefined' being passed (browser template bug)
+    const isValidUid = uid && uid.length > 0 && uid !== 'undefined';
+    const isValidToken = customToken && customToken.length > 0 && customToken !== 'undefined';
+
+    if (!isValidUid || !isValidToken) {
+      console.error('[ContextLens] handleUri received invalid parameters:', { uid, customToken: customToken ? '[REDACTED]' : customToken });
+      vscode.window.showErrorMessage(
+        `ContextLens: Sign-in failed — missing or invalid uid/token in callback. Please try signing in again.`
+      );
       return;
     }
 
@@ -78,10 +86,15 @@ export class AuthManager implements vscode.UriHandler {
       // Exchange the custom token for a real Firebase ID token
       const exchangeResult = await exchangeCustomTokenForIdToken(customToken);
 
+      if (!exchangeResult || !exchangeResult.idToken || !exchangeResult.refreshToken) {
+        console.error('[ContextLens] Invalid exchange result:', exchangeResult);
+        throw new Error(`Invalid token response from Firebase API.`);
+      }
+
       // Store in SecretStorage (primary)
       await this.context.secrets.store(SECRET_ID_TOKEN_KEY, exchangeResult.idToken);
       await this.context.secrets.store(SECRET_REFRESH_TOKEN_KEY, exchangeResult.refreshToken);
-      await this.context.secrets.store(SECRET_UID_KEY, exchangeResult.localId);
+      await this.context.secrets.store(SECRET_UID_KEY, uid);
 
       // Clean up any leaked plaintext tokens from earlier versions
       await this.context.globalState.update(GLOBAL_ID_TOKEN_KEY, undefined);
@@ -92,17 +105,17 @@ export class AuthManager implements vscode.UriHandler {
       await this.context.secrets.delete(SECRET_TOKEN_KEY);
 
       // Notify listeners
-      this._onDidSignIn.fire({ uid: exchangeResult.localId, token: exchangeResult.idToken });
+      this._onDidSignIn.fire({ uid, token: exchangeResult.idToken });
 
       // Resolve any pending ensureSignedIn() promise
       if (this.signInResolver) {
-        this.signInResolver({ uid: exchangeResult.localId, token: exchangeResult.idToken });
+        this.signInResolver({ uid, token: exchangeResult.idToken });
         this.signInResolver = null;
       }
 
       vscode.window.showInformationMessage('ContextLens: Sign-in successful! ✦');
     } catch (err: any) {
-      console.error('Token exchange failed:', err);
+      console.error('[ContextLens] Token exchange failed:', err);
       vscode.window.showErrorMessage(`ContextLens: Sign-in failed — ${err.message}`);
     }
   }
@@ -115,10 +128,25 @@ export class AuthManager implements vscode.UriHandler {
    * @returns A promise that resolves with the UID and ID token once sign-in is complete.
    */
   async signIn(): Promise<{ uid: string; token: string }> {
-    const callbackUriStr = `${vscode.env.uriScheme}://${EXTENSION_ID}`;
+    // Defensively fall back to 'vscode' — vscode.env.uriScheme can be empty
+    // in some environments, causing vscode.Uri.parse to throw:
+    // "Error processing argument at index 0, conversion failure from undefined"
+    const scheme = (vscode.env.uriScheme && vscode.env.uriScheme.length > 0)
+      ? vscode.env.uriScheme
+      : 'vscode';
+    const callbackUriStr = `${scheme}://${EXTENSION_ID}`;
     const loginUrl = `${API_BASE}/auth/login?callback=${encodeURIComponent(callbackUriStr)}`;
 
-    await vscode.env.openExternal(vscode.Uri.parse(loginUrl));
+    let loginUri: vscode.Uri;
+    try {
+      loginUri = vscode.Uri.parse(loginUrl, true);
+    } catch (err: any) {
+      console.error('[ContextLens] Failed to parse login URL:', loginUrl, err);
+      vscode.window.showErrorMessage(`ContextLens: Could not open sign-in page — ${err.message}`);
+      throw err;
+    }
+
+    await vscode.env.openExternal(loginUri);
 
     return new Promise<{ uid: string; token: string }>((resolve) => {
       this.signInResolver = resolve;

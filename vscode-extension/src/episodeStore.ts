@@ -3,6 +3,7 @@ import { ApiClient } from './apiClient';
 import { GitContext } from './gitContext';
 import { getAuthManager } from './auth';
 import { SyncEngine } from './syncEngine';
+import { randomUUID } from 'crypto';
 
 /**
  * Represents a single development episode or task tracked by ContextLens.
@@ -316,8 +317,9 @@ export class EpisodeStore {
     const trimmedName = name.trim();
     if (!this.projectId || !trimmedName) return;
 
-    // We generate a temporary ID so we can start logging calls immediately
-    const tempEpisodeId = `temp-${Date.now()}`;
+    // Use a real UUID v4 immediately so backend validation (which requires UUID
+    // format) never rejects the episodeId when the SyncEngine eventually flushes.
+    const localEpisodeId = randomUUID();
 
     this.syncEngine?.enqueue({
       type: 'episode_create',
@@ -332,7 +334,7 @@ export class EpisodeStore {
 
     const now = Date.now();
     this.activeEpisode = {
-      id: tempEpisodeId, // This will be reconciled on backend
+      id: localEpisodeId,
       name: trimmedName,
       callCount: 0,
       changedFiles: [],
