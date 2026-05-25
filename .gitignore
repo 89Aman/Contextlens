@@ -19,3 +19,4 @@ Thumbs.db
 firebase-debug.log
 *.vsix
 *.tsbuildinfo
+.claude
