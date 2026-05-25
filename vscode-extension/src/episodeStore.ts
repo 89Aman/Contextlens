@@ -274,7 +274,12 @@ export class EpisodeStore {
         episodeId: this.activeEpisode.id,
       });
     } catch (err: any) {
-      vscode.window.showWarningMessage(`ContextLens: Could not close episode on server — ${err.message}`);
+      // Gracefully handle case where project or episode was deleted on server (404)
+      if (err.message && (err.message.includes('not found') || err.message.includes('deleted'))) {
+        console.log('Episode already gone on server. Cleared locally.');
+      } else {
+        vscode.window.showWarningMessage(`ContextLens: Could not close episode on server — ${err.message}`);
+      }
     }
 
     this.activeEpisode = null;

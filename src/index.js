@@ -99,109 +99,167 @@ app.get('/api/auth/login', async (req, res) => {
     }
 
     // Serve a page with Google Sign-In via Firebase Auth JS SDK.
-    // After sign-in, the page POSTs the ID token to /api/auth/exchange
-    // which verifies it, creates a custom token, and returns it.
-    res.send(`
+    // After sign-in, the page POSTs the ID token to /api/auth/exchange    res.send(`
       <!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>ContextLens — Sign In</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
         <style>
           body {
-            font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
-            background: radial-gradient(circle at center, #0a0e17 0%, #04060a 100%);
-            color: #ffffff;
+            background-color: #08090c;
+            color: #f3f4f6;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             overflow: hidden;
           }
 
-          .glow {
-            position: absolute;
-            width: 600px; height: 600px;
-            background: radial-gradient(circle, rgba(126,200,200,0.15) 0%, transparent 70%);
-            top: 50%; left: 50%;
-            transform: translate(-50%,-50%);
-            pointer-events: none;
-          }
-
           .container {
-            position: relative; z-index: 1;
-            background: rgba(22, 27, 34, 0.6);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            width: 100%;
+            max-width: 380px;
             padding: 3rem 2.5rem;
-            border-radius: 20px;
-            border: 1px solid rgba(126,200,200,0.15);
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+            background-color: #0d0e12;
+            border: 1px solid #1f222d;
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
             text-align: center;
-            max-width: 420px;
-            animation: slideUp 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
-            opacity: 0; transform: translateY(20px);
+            box-sizing: border-box;
+            opacity: 0;
+            transform: translateY(10px);
+            animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
           }
 
-          @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
-
-          .logo {
-            font-size: 3rem; margin-bottom: 1.25rem; color: #7ec8c8;
-            text-shadow: 0 0 20px rgba(126,200,200,0.5);
-            animation: float 3s ease-in-out infinite;
+          @keyframes fadeIn {
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
           }
 
-          @keyframes float {
-            0%   { transform: translateY(0)    scale(0.95); opacity: 0.9; }
-            50%  { transform: translateY(-8px) scale(1.05); opacity: 1;   }
-            100% { transform: translateY(0)    scale(0.95); opacity: 0.9; }
+          .logo-wrapper {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 1.5rem;
           }
 
-          h1 { margin-top: 0; margin-bottom: 0.75rem; font-size: 1.65rem; font-weight: 500; letter-spacing: -0.02em; }
-          p  { margin-bottom: 2.25rem; color: #a1aab5; line-height: 1.6; font-size: 0.85rem; font-weight: 300; }
+          .logo-icon {
+            width: 32px;
+            height: 32px;
+            color: #4f98a3;
+          }
+
+          h1 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.35rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            color: #ffffff;
+          }
+
+          p {
+            margin: 0 0 2.25rem 0;
+            color: #8c96a3;
+            line-height: 1.5;
+            font-size: 0.85rem;
+          }
 
           .btn-google {
-            display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-            background: #fff; color: #333; padding: 0.85rem 2rem;
-            border-radius: 10px; border: none; cursor: pointer;
-            font-weight: 500; font-size: 0.95rem; font-family: inherit;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            background-color: #ffffff;
+            color: #0f1115;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.9rem;
+            font-family: inherit;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: opacity 0.2s ease, transform 0.1s ease;
           }
-          .btn-google:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
-          .btn-google:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-          .btn-google svg { width: 20px; height: 20px; }
 
-          .status { margin-top: 1.5rem; font-size: 0.8rem; color: #7ec8c8; min-height: 1.5rem; }
-          .error  { color: #ff6b6b; }
+          .btn-google:hover {
+            opacity: 0.95;
+          }
 
-          .counter { font-weight: 600; color: #7ec8c8; display: inline-block; min-width: 1ch; }
+          .btn-google:active {
+            transform: scale(0.98);
+          }
+
+          .btn-google:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+          }
+
+          .btn-google svg {
+            width: 16px;
+            height: 16px;
+          }
+
+          .status {
+            margin-top: 1.25rem;
+            font-size: 0.8rem;
+            color: #4f98a3;
+            min-height: 1.25rem;
+          }
+
+          .status.error {
+            color: #ef4444;
+          }
+
+          .counter {
+            font-weight: 600;
+            color: #4f98a3;
+          }
 
           .btn-vscode {
-            display: inline-flex; align-items: center; justify-content: center;
-            background: linear-gradient(135deg, #4f98a3 0%, #3a757e 100%);
-            color: #fff; padding: 0.85rem 2rem; border-radius: 10px;
-            text-decoration: none; font-weight: 500; font-size: 0.95rem;
-            border: 1px solid rgba(255,255,255,0.1);
-            box-shadow: 0 4px 15px rgba(79,152,163,0.3);
-            transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            background-color: #1f222d;
+            color: #ffffff;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+            border: 1px solid #2d313e;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            box-sizing: border-box;
           }
-          .btn-vscode:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(79,152,163,0.4); }
 
-          .hidden { display: none; }
+          .btn-vscode:hover {
+            background-color: #262a38;
+            border-color: #3b4052;
+          }
+
+          .hidden {
+            display: none;
+          }
         </style>
       </head>
       <body>
-        <div class="glow"></div>
         <div class="container">
-          <div class="logo">✦</div>
+          <div class="logo-wrapper">
+            <!-- Premium monochrome lens + spark icon -->
+            <svg class="logo-icon" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M6 1C3.23858 1 1 3.23858 1 6C1 8.76142 3.23858 11 6 11C7.16012 11 8.2246 10.6033 9.07107 9.93579L13.2929 14.1576 C13.6834 14.5481 14.3166 14.5481 14.7071 14.1576 C15.0976 13.7671 15.0976 13.1339 14.7071 12.7434 L10.5146 8.55093 C10.825 7.78181 11 6.91712 11 6C11 3.23858 8.76142 1 6 1 Z M3 6C3 4.34315 4.34315 3 6 3C7.65685 3 9 4.34315 9 6C9 7.65685 7.65685 9 6 9C4.34315 9 3 7.65685 3 6 Z"/>
+              <path d="M12.5 1 L13 3 L15 3.5 L13 4 L12.5 6 L12 4 L10 3.5 L12 3 Z"/>
+            </svg>
+          </div>
 
           <!-- Step 1: Google Sign-In -->
           <div id="signin-view">
@@ -216,7 +274,7 @@ app.get('/api/auth/login', async (req, res) => {
 
           <!-- Step 2: Success + redirect to VS Code -->
           <div id="success-view" class="hidden">
-            <h1>Authentication Successful!</h1>
+            <h1>Authentication Successful</h1>
             <p>You have successfully signed in to ContextLens.<br/>
             This window will automatically redirect back to VS Code in
             <span id="counter" class="counter">5</span> seconds,
@@ -298,7 +356,7 @@ app.get('/api/auth/login', async (req, res) => {
               btn.disabled = false;
             }
           }
-        <\/script>
+        </script>
       </body>
       </html>
     `);

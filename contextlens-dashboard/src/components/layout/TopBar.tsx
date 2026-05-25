@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Link, useParams, useMatches } from 'react-router-dom'
-import { Search, X } from 'lucide-react'
+import { Search, X, ChevronRight } from 'lucide-react'
 import { useSearch } from '../../context/SearchContext'
 import { useAuth } from '../../context/AuthContext'
 import { useProjects } from '../../lib/firestoreHooks'
@@ -48,18 +48,18 @@ export function TopBar() {
   }, [currentProject, projectId, episodeId, branchName, matches])
 
   return (
-    <header className="h-12 flex items-center justify-between px-6 border-b border-cardBorder bg-surface flex-shrink-0">
+    <header className="h-12 flex items-center justify-between px-6 border-b border-cardBorder/60 bg-surface flex-shrink-0">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1 text-sm">
+      <nav className="flex items-center gap-1.5 text-sm">
         {crumbs.map((crumb, i) => (
-          <span key={crumb.href} className="flex items-center gap-1">
-            {i > 0 && <span className="text-textMuted">/</span>}
+          <span key={crumb.href} className="flex items-center gap-1.5">
+            {i > 0 && <ChevronRight className="w-3 h-3 text-textMuted/30" />}
             {i === crumbs.length - 1 ? (
               <span className="text-textPrimary font-medium">{crumb.label}</span>
             ) : (
               <Link
                 to={crumb.href}
-                className="text-textMuted hover:text-textPrimary transition-colors"
+                className="text-textMuted/60 hover:text-textPrimary transition-colors duration-150"
               >
                 {crumb.label}
               </Link>
@@ -72,18 +72,21 @@ export function TopBar() {
       <div className="flex items-center gap-3">
         {isSearchablePage && (
           <div className="relative group">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-textMuted group-focus-within:text-primary transition-colors" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-textMuted/40 group-focus-within:text-primary transition-colors duration-150" />
             <input
               type="text"
-              placeholder="Search episodes, branches..."
+              placeholder="Search episodes…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-48 bg-gray-900/50 border border-cardBorder rounded-md pl-8 pr-8 py-1.5 text-xs text-textPrimary focus:outline-none focus:border-primary/50 focus:w-64 transition-all"
+              className="w-44 bg-white/[0.03] border border-cardBorder/50 rounded-lg pl-8 pr-8 py-1.5 text-xs text-textPrimary
+                         placeholder:text-textMuted/30
+                         focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 focus:w-64
+                         transition-all duration-200"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-textMuted hover:text-primary transition-colors"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-textMuted/40 hover:text-primary transition-colors duration-150"
               >
                 <X className="w-3.5 h-3.5" />
               </button>

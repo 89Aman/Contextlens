@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FolderOpen, Plus } from 'lucide-react'
+import { FolderOpen, Plus, Zap } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSearch } from '../context/SearchContext'
 import { useProjects, useRecentEpisodes } from '../lib/firestoreHooks'
@@ -26,7 +26,6 @@ export const HomePage = memo(function HomePage() {
     error: episodesError,
   } = useRecentEpisodes(user?.uid ?? '', 10)
 
-  // Memoize filtered projects
   const filteredProjects = useMemo(
     () => projects.filter((p) =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -35,7 +34,6 @@ export const HomePage = memo(function HomePage() {
     [projects, searchQuery]
   )
 
-  // Memoize filtered recent episodes
   const filteredEpisodes = useMemo(
     () => recentEpisodes.filter((ep) =>
       ep.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -46,14 +44,20 @@ export const HomePage = memo(function HomePage() {
   )
 
   return (
-    <div className="max-w-5xl">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-textPrimary">
-          Welcome back, {user?.displayName?.split(' ')[0] ?? 'Developer'} 👋
-        </h1>
+    <div className="max-w-5xl page-enter">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-textPrimary">
+            Welcome back, {user?.displayName?.split(' ')[0] ?? 'Developer'}
+          </h1>
+          <p className="text-sm text-textMuted/50 mt-1">Here's what's happening across your projects.</p>
+        </div>
         <button
           onClick={() => navigate('/dashboard/setup')}
-          className="flex items-center gap-2 bg-primary hover:bg-primaryLight text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-primary/20"
+          className="flex items-center gap-2 bg-primary hover:brightness-110 text-black px-4 py-2.5 rounded-xl text-sm font-bold
+                     transition-all duration-150 active:scale-[0.97]
+                     shadow-lg shadow-primary/20"
         >
           <Plus className="w-4 h-4" />
           Connect Project
@@ -61,12 +65,15 @@ export const HomePage = memo(function HomePage() {
       </div>
 
       {/* Projects section */}
-      <section className="mb-10">
-        <div className="flex items-center gap-2 mb-3">
-          <FolderOpen className="w-4 h-4 text-textMuted" />
-          <h2 className="text-[11px] font-semibold text-textMuted uppercase tracking-wider">
+      <section className="mb-10 animate-fadeIn" style={{ animationDelay: '60ms' }}>
+        <div className="flex items-center gap-2 mb-4">
+          <FolderOpen className="w-4 h-4 text-textMuted/40" />
+          <h2 className="text-[11px] font-semibold text-textMuted/50 uppercase tracking-wider">
             Your Projects
           </h2>
+          {!projectsLoading && projects.length > 0 && (
+            <span className="text-[10px] text-textMuted/30 tabular-nums">{projects.length}</span>
+          )}
         </div>
 
         {projectsLoading && (
@@ -78,7 +85,7 @@ export const HomePage = memo(function HomePage() {
         )}
 
         {projectsError && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-6">
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
             <p className="text-sm text-red-400">{projectsError}</p>
           </div>
         )}
@@ -94,18 +101,26 @@ export const HomePage = memo(function HomePage() {
 
         {!projectsLoading && projects.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredProjects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
+            {filteredProjects.map((project, i) => (
+              <div key={project.id} className="animate-fadeIn" style={{ animationDelay: `${80 + i * 50}ms` }}>
+                <ProjectCard project={project} />
+              </div>
             ))}
           </div>
         )}
       </section>
 
       {/* Recent Episodes section */}
-      <section>
-        <h2 className="text-[11px] font-semibold text-textMuted uppercase tracking-wider mb-3">
-          Recent Episodes
-        </h2>
+      <section className="animate-fadeIn" style={{ animationDelay: '180ms' }}>
+        <div className="flex items-center gap-2 mb-4">
+          <Zap className="w-4 h-4 text-textMuted/40" />
+          <h2 className="text-[11px] font-semibold text-textMuted/50 uppercase tracking-wider">
+            Recent Episodes
+          </h2>
+          {!episodesLoading && recentEpisodes.length > 0 && (
+            <span className="text-[10px] text-textMuted/30 tabular-nums">{recentEpisodes.length}</span>
+          )}
+        </div>
 
         {episodesLoading && (
           <div className="space-y-2">
@@ -114,7 +129,7 @@ export const HomePage = memo(function HomePage() {
         )}
 
         {episodesError && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-6">
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
             <p className="text-sm text-red-400">{episodesError}</p>
           </div>
         )}
@@ -127,7 +142,7 @@ export const HomePage = memo(function HomePage() {
         )}
 
         {!episodesLoading && recentEpisodes.length > 0 && (
-          <div className="bg-card border border-cardBorder rounded-lg overflow-hidden">
+          <div className="bg-card border border-cardBorder rounded-xl overflow-hidden">
             {filteredEpisodes.map((ep, i) => (
               <RecentEpisodeItem key={ep.id} episode={ep} isFirst={i === 0} />
             ))}

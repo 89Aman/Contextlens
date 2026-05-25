@@ -235,9 +235,17 @@ async function request<T>(path: string, body?: object): Promise<T> {
 
   if (res.status >= 400) {
     // Parse error code from response and map to user-friendly message
-    const errorCode = parsed?.error?.code || 'INTERNAL_ERROR';
+    const rawCode = parsed?.error?.code || 'INTERNAL_ERROR';
+    const errorCode = rawCode.toUpperCase();
     const mapped = ErrorMapper.map({ code: errorCode, status: res.status });
-    throw new Error(mapped.message);
+
+    // Include validation details if available
+    let message = mapped.message;
+    if (errorCode === 'VALIDATION_ERROR' && parsed?.error?.details?.length) {
+      const fields = parsed.error.details.map((d: any) => `${d.field}: ${d.message}`).join('; ');
+      message = `Validation failed — ${fields}`;
+    }
+    throw new Error(message);
   }
 
   return parsed as T;

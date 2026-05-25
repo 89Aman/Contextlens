@@ -22,22 +22,36 @@
     overflow: hidden;
   }
 
+  /* Smooth focus outlines globally */
+  :focus-visible {
+    outline: 2px solid rgba(79, 152, 163, 0.5);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
 
   ::-webkit-scrollbar-track {
-    background: #0d1117;
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #30363d;
+    background: #21262d;
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #4f98a3;
+    background: #30363d;
+  }
+
+  /* Selection color */
+  ::selection {
+    background: rgba(79, 152, 163, 0.3);
+    color: #e6edf3;
   }
 }
 
@@ -51,5 +65,66 @@
 
   .animate-spin-slow {
     animation: spin 1.5s linear infinite;
+  }
+
+  /* Staggered section fade-in */
+  .animate-fadeIn {
+    animation: fadeIn 0.45s ease-out both;
+  }
+
+  /* Shimmer for skeletons */
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(48, 54, 61, 0.3) 25%,
+      rgba(48, 54, 61, 0.6) 50%,
+      rgba(48, 54, 61, 0.3) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* Subtle glow on hover for cards */
+  .card-glow {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+  }
+
+  .card-glow:hover {
+    border-color: rgba(79, 152, 163, 0.35);
+    box-shadow: 0 0 0 1px rgba(79, 152, 163, 0.08), 0 4px 24px -4px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Page mount animation */
+  .page-enter {
+    animation: pageEnter 0.35s ease-out both;
+  }
+}
+
+/* ── Keyframes ───────────────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

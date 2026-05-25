@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Clock, FileCode, Zap } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useEpisode, useCalls } from '../lib/firestoreHooks'
 import { explainDiff } from '../lib/api'
@@ -29,7 +29,6 @@ export function EpisodeDetailPage() {
     !!episodeId,
   )
 
-  // Explain Diff state
   const [explainResult, setExplainResult] = useState<ExplainDiffResult | null>(null)
   const [explainLoading, setExplainLoading] = useState(false)
   const [explainError, setExplainError] = useState<string | null>(null)
@@ -50,7 +49,7 @@ export function EpisodeDetailPage() {
 
   if (epLoading) {
     return (
-      <div className="max-w-3xl space-y-3">
+      <div className="max-w-3xl space-y-3 page-enter">
         <SkeletonCard lines={4} />
         <SkeletonCard lines={3} />
       </div>
@@ -58,11 +57,8 @@ export function EpisodeDetailPage() {
   }
 
   if (epError) return <ErrorMessage message={epError} />
-  if (!episode) {
-    return <ErrorMessage message="Episode not found." />
-  }
+  if (!episode) return <ErrorMessage message="Episode not found." />
 
-  // Check if explainDiff is cached in Firestore
   const cachedExplain = episode.explainDiffSummary
     ? {
         summary: episode.explainDiffSummary,
@@ -74,53 +70,82 @@ export function EpisodeDetailPage() {
   const activeResult = explainResult ?? cachedExplain
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-3xl page-enter">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-8">
         <h1 className="text-2xl font-bold text-textPrimary mb-3">{episode.label}</h1>
-        <div className="flex flex-wrap items-center gap-2 mb-2">
+
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           <Badge text={episode.branchName} variant="branch" />
           <Badge
             text={episode.status}
             variant={episode.status === 'active' ? 'status-active' : 'status-closed'}
           />
-          <span className="text-xs text-textMuted">
-            {episode.callCount} AI call{episode.callCount !== 1 ? 's' : ''}
-          </span>
         </div>
-        <p className="text-xs text-textMuted">
-          Started {formatDate(episode.startedAt)}
-          {episode.endedAt
-            ? ` · Closed ${timeDuration(episode.startedAt, episode.endedAt)} later`
-            : ` · Active since ${timeAgo(episode.startedAt)}`}
-        </p>
+
+        {/* Stats row */}
+        <div className="flex items-center gap-3 text-xs text-textMuted/50">
+          <span className="flex items-center gap-1">
+            <Zap className="w-3 h-3" />
+            <span className="tabular-nums">{episode.callCount}</span> call{episode.callCount !== 1 ? 's' : ''}
+          </span>
+          <div className="w-1 h-1 rounded-full bg-textMuted/20" />
+          <span className="flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {formatDate(episode.startedAt)}
+          </span>
+          {episode.endedAt && (
+            <>
+              <div className="w-1 h-1 rounded-full bg-textMuted/20" />
+              <span>{timeDuration(episode.startedAt, episode.endedAt)}</span>
+            </>
+          )}
+          {!episode.endedAt && (
+            <>
+              <div className="w-1 h-1 rounded-full bg-textMuted/20" />
+              <span>Active {timeAgo(episode.startedAt)}</span>
+            </>
+          )}
+        </div>
+
         {episode.manualNotes && (
-          <p className="mt-2 text-sm text-textMuted italic border-l-2 border-cardBorder pl-3">
+          <p className="mt-3 text-sm text-textMuted/60 italic border-l-2 border-primary/30 pl-3">
             {episode.manualNotes}
           </p>
         )}
 
         {/* Changed files */}
         {episode.changedFiles.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {episode.changedFiles.map((f) => (
-              <Badge key={f} text={f} variant="file" />
-            ))}
+          <div className="mt-4">
+            <div className="flex items-center gap-1.5 mb-2">
+              <FileCode className="w-3 h-3 text-textMuted/40" />
+              <span className="text-[10px] font-semibold text-textMuted/40 uppercase tracking-wider">
+                Changed Files
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {episode.changedFiles.map((f) => (
+                <Badge key={f} text={f} variant="file" />
+              ))}
+            </div>
           </div>
         )}
       </div>
 
       {/* Explain Diff section */}
-      <section className="mb-6">
+      <section className="mb-8 animate-fadeIn" style={{ animationDelay: '60ms' }}>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[11px] font-semibold text-textMuted uppercase tracking-wider">
+          <h2 className="text-[11px] font-semibold text-textMuted/50 uppercase tracking-wider flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
             Explain Diff
           </h2>
           {!activeResult && !explainLoading && (
             <button
               id="explain-diff-btn"
               onClick={handleExplainDiff}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary hover:bg-primaryLight text-white text-xs font-medium transition-colors shadow-lg shadow-primary/20"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-black text-xs font-bold
+                         hover:brightness-110 active:scale-[0.97]
+                         transition-all duration-150 shadow-lg shadow-primary/20"
             >
               <Sparkles className="w-3.5 h-3.5" />
               Explain Diff
@@ -138,16 +163,18 @@ export function EpisodeDetailPage() {
         )}
 
         {!activeResult && !explainLoading && !explainError && (
-          <p className="text-xs text-textMuted">
+          <p className="text-xs text-textMuted/40">
             Click "Explain Diff" to get an AI-powered analysis of this episode's changes.
           </p>
         )}
       </section>
 
       {/* AI Calls section */}
-      <section>
-        <h2 className="text-[11px] font-semibold text-textMuted uppercase tracking-wider mb-3">
-          AI Calls ({episode.callCount})
+      <section className="animate-fadeIn" style={{ animationDelay: '120ms' }}>
+        <h2 className="text-[11px] font-semibold text-textMuted/50 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <Zap className="w-3.5 h-3.5" />
+          AI Calls
+          <span className="text-textMuted/30 tabular-nums">({episode.callCount})</span>
         </h2>
 
         {callsLoading ? (
@@ -157,7 +184,7 @@ export function EpisodeDetailPage() {
             <SkeletonCard lines={2} />
           </div>
         ) : calls.length === 0 ? (
-          <p className="text-xs text-textMuted">No calls recorded for this episode.</p>
+          <p className="text-xs text-textMuted/40 py-4">No calls recorded for this episode.</p>
         ) : (
           <div className="space-y-2">
             {calls.map((call) => (
@@ -169,7 +196,7 @@ export function EpisodeDetailPage() {
         {explainLoading && (
           <div className="flex items-center gap-2 mt-4">
             <Spinner size="sm" />
-            <span className="text-xs text-textMuted">Loading...</span>
+            <span className="text-xs text-textMuted/40">Analyzing…</span>
           </div>
         )}
       </section>

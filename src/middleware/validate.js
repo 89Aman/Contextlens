@@ -48,15 +48,17 @@ const isNonEmptyString = (field, maxLen = 500) =>
     .withMessage(`${field} must be at most ${maxLen} characters`);
 
 /**
- * Validates that a field, if present, is a valid URL.
+ * Validates that a field, if present, is a valid URL or SSH git remote.
+ * Accepts: https://..., http://..., git@host:user/repo.git
  * @param {string} field - The field name.
  */
+const GIT_REMOTE_REGEX = /^(https?:\/\/.+|git@[\w.-]+:[\w./-]+)$/;
 const isOptionalUrl = (field) =>
   body(field)
     .optional({ values: 'null' })
     .trim()
-    .isURL({ require_protocol: true })
-    .withMessage(`${field} must be a valid URL`);
+    .matches(GIT_REMOTE_REGEX)
+    .withMessage(`${field} must be a valid URL or git SSH remote`);
 
 // ── Per-route validation chains ────────────────────────────────────────────
 

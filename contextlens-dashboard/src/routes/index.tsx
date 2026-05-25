@@ -13,7 +13,7 @@ const EpisodeDetailPage = lazy(() => import('../pages/EpisodeDetailPage').then(m
 const BranchPage = lazy(() => import('../pages/BranchPage').then(m => ({ default: m.BranchPage })))
 const SettingsPage = lazy(() => import('../pages/SettingsPage').then(m => ({ default: m.SettingsPage })))
 const SetupPage = lazy(() => import('../pages/SetupPage').then(m => ({ default: m.SetupPage })))
-const NotFoundPage = lazy(() => import('../pages/NotFoundPage'))
+const NotFoundPage = lazy(() => import('../pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })))
 
 function PageLoader() {
   return (
