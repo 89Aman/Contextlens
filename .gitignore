@@ -9,4 +9,12 @@ v2
 dist/
 out/
 diary/
-*.md
+.idea/
+.venv/
+.env.local
+.env.*.local
+*.backup.*
+.DS_Store
+Thumbs.db
+firebase-debug.log
+*.vsix
