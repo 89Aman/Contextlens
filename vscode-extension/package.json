@@ -8,6 +8,7 @@
     "name": "Aman Sharma",
     "email": "Shasarita23@gmail.com"
   },
+  "icon": "resources/icon.svg",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -24,7 +25,7 @@
   "keywords": [
     "ai",
     "context",
-    "gemini",
+    "vibecode",
     "tracking",
     "developer-productivity"
   ],

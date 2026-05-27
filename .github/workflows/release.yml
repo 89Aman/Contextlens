@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags, e.g., v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Install Backend Dependencies
+        run: npm ci
+        
+      - name: Install Extension Dependencies
+        working-directory: ./vscode-extension
+        run: npm ci
+
+      - name: Package VS Code Extension
+        working-directory: ./vscode-extension
+        run: vsce package -o contextlens-extension.vsix
+
+      - name: Zip Documentation
+        run: zip -r docs.zip docs/
+
+      - name: Create Release & Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            vscode-extension/contextlens-extension.vsix
+            docs.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
