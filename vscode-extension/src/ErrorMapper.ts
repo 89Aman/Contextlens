@@ -114,9 +114,9 @@ const ERROR_MAP: Record<string, {
   },
   CONFIG_ERROR: {
     level: 'error',
-    message: 'Server configuration error. Please check your settings.',
-    actionLabel: 'Open Settings',
-    actionCommand: 'contextlens.openSettings',
+    message: 'AI provider configuration error. Please re-enter your API key.',
+    actionLabel: 'Configure Provider',
+    actionCommand: 'contextlens.configureProvider',
     retryable: false,
   },
   INTERNAL_ERROR: {

@@ -81,6 +81,14 @@
       {
         "command": "contextlens.configureProvider",
         "title": "ContextLens: Configure AI Provider"
+      },
+      {
+        "command": "contextlens.copyMcpConfig",
+        "title": "ContextLens: Copy MCP Configuration"
+      },
+      {
+        "command": "contextlens.autoSetupMcp",
+        "title": "ContextLens: Auto-Setup MCP in AI Clients"
       }
     ],
     "viewsContainers": {

@@ -11,10 +11,17 @@ import { startWatchers } from './watchers';
 import { ContextLensStatusBar } from './statusBar';
 import { NotificationService } from './NotificationService';
 import { ErrorMapper } from './ErrorMapper';
+import { startMcpServer, stopMcpServer } from './mcpServer';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 export function activate(context: vscode.ExtensionContext) {
   Telemetry.log('Extension activated');
   const notifier = NotificationService.getInstance();
+
+  // Start local MCP helper server
+  startMcpServer();
 
   // ── Auth setup (must be FIRST) ───────────────────────────────────────────
 
@@ -489,13 +496,124 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // ── Command: Copy MCP Config ─────────────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.copyMcpConfig', async () => {
+      const bridgePath = context.asAbsolutePath('mcp-bridge.js');
+      const mcpConfig = {
+        contextlens: {
+          command: 'node',
+          args: [bridgePath]
+        }
+      };
+      
+      const configStr = JSON.stringify(mcpConfig, null, 2);
+      await vscode.env.clipboard.writeText(configStr);
+      vscode.window.showInformationMessage('ContextLens: MCP configuration copied to clipboard! Paste it into Cursor or Claude Desktop settings.');
+      Telemetry.log('MCP Config Copied');
+    })
+  );
+
+  // ── Command: Auto-Setup MCP in AI Clients ────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.autoSetupMcp', async () => {
+      const bridgePath = context.asAbsolutePath('mcp-bridge.js');
+      const homeDir = os.homedir();
+      const results: string[] = [];
+
+      // 1. Claude Desktop Config
+      let claudeConfigDir = '';
+      if (process.platform === 'win32') {
+        claudeConfigDir = path.join(process.env.APPDATA || '', 'Claude');
+      } else if (process.platform === 'darwin') {
+        claudeConfigDir = path.join(homeDir, 'Library', 'Application Support', 'Claude');
+      } else {
+        claudeConfigDir = path.join(homeDir, '.config', 'Claude');
+      }
+
+      const claudePath = path.join(claudeConfigDir, 'claude_desktop_config.json');
+      if (fs.existsSync(claudeConfigDir)) {
+        try {
+          let config: any = {};
+          if (fs.existsSync(claudePath)) {
+            const raw = fs.readFileSync(claudePath, 'utf8');
+            config = JSON.parse(raw) || {};
+            // Write backup
+            fs.writeFileSync(`${claudePath}.bak`, raw, 'utf8');
+          }
+
+          if (!config.mcpServers) config.mcpServers = {};
+          config.mcpServers.contextlens = {
+            command: 'node',
+            args: [bridgePath]
+          };
+
+          fs.writeFileSync(claudePath, JSON.stringify(config, null, 2), 'utf8');
+          results.push('Claude Desktop');
+        } catch (err: any) {
+          vscode.window.showWarningMessage(`ContextLens: Failed to configure Claude Desktop — ${err.message}`);
+        }
+      }
+
+      // 2. Cursor MCP Settings
+      let cursorMcpDir = '';
+      if (process.platform === 'win32') {
+        cursorMcpDir = path.join(process.env.APPDATA || '', 'Cursor', 'User', 'globalStorage', 'moomin.cursor-mcp');
+      } else if (process.platform === 'darwin') {
+        cursorMcpDir = path.join(homeDir, 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'moomin.cursor-mcp');
+      } else {
+        cursorMcpDir = path.join(homeDir, '.config', 'Cursor', 'User', 'globalStorage', 'moomin.cursor-mcp');
+      }
+
+      const cursorPath = path.join(cursorMcpDir, 'settings.json');
+      if (fs.existsSync(cursorMcpDir)) {
+        try {
+          let config: any = {};
+          if (fs.existsSync(cursorPath)) {
+            const raw = fs.readFileSync(cursorPath, 'utf8');
+            config = JSON.parse(raw) || {};
+            // Write backup
+            fs.writeFileSync(`${cursorPath}.bak`, raw, 'utf8');
+          }
+
+          if (!config.mcpServers) config.mcpServers = {};
+          config.mcpServers.contextlens = {
+            name: 'contextlens',
+            type: 'stdio',
+            command: 'node',
+            args: [bridgePath],
+            isOn: true
+          };
+
+          fs.writeFileSync(cursorPath, JSON.stringify(config, null, 2), 'utf8');
+          results.push('Cursor');
+        } catch (err: any) {
+          vscode.window.showWarningMessage(`ContextLens: Failed to configure Cursor — ${err.message}`);
+        }
+      }
+
+      if (results.length > 0) {
+        vscode.window.showInformationMessage(`ContextLens: Successfully configured MCP server for ${results.join(' and ')} ✦`);
+        Telemetry.log('MCP Auto-Setup Successful', { clients: results });
+      } else {
+        vscode.window.showInformationMessage('ContextLens: No supported AI client directories found (Claude Desktop or Cursor). Placed bridge config in clipboard instead!');
+        vscode.commands.executeCommand('contextlens.copyMcpConfig');
+      }
+    })
+  );
+
   // ── Deactivation ──────────────────────────────────────────────────────────
   context.subscriptions.push({
     dispose: () => {
       statusBar.hide();
       statusBar.dispose();
+      stopMcpServer();
     }
   });
 }
 
-export function deactivate() {}
+export function deactivate() {
+  stopMcpServer();
+}

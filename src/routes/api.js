@@ -101,6 +101,18 @@ async function getProviderConfig(uid, defaultApiKey) {
       else if (provider === 'openai' && settings.openaiApiKey) customApiKey = decrypt(settings.openaiApiKey);
       else if (provider === 'anthropic' && settings.anthropicApiKey) customApiKey = decrypt(settings.anthropicApiKey);
       
+      // Guard: if decrypt failed silently and returned raw ciphertext, treat as missing key
+      if (customApiKey && typeof customApiKey === 'string' && customApiKey.startsWith('enc:v1:')) {
+        console.error(JSON.stringify({
+          severity: 'ERROR',
+          event: 'api_key_decrypt_failed',
+          uid,
+          provider,
+          message: 'Stored API key could not be decrypted. User must re-enter key.',
+        }));
+        customApiKey = null;
+      }
+      
       return { provider: provider === 'none' ? 'gemini' : provider, customApiKey };
     }
   } catch (err) {
@@ -330,11 +342,23 @@ router.post('/episodes/explain', aiLimiter, explainRules, async (req, res) => {
     const epRef = await verifyEpisodeOwnership(uid, projectId, episodeId, req, res);
     if (!epRef) return;
 
-    const cacheRef = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes').doc(episodeId).collection('cache').doc(diffHash);
+    // Fetch episode doc to get latest diff information if not provided
+    const epDoc = await epRef.get();
+    const epData = epDoc.data();
+    
+    const finalDiffHash = diffHash || epData.latestDiffHash;
+    if (!finalDiffHash) {
+      return res.status(400).json(
+        typedError(ErrorCodes.VALIDATION_ERROR, 'No diff hash provided or found on the episode.', { requestId: req.id })
+      );
+    }
+
+    const cacheRef = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes').doc(episodeId).collection('cache').doc(finalDiffHash);
     const cached = await cacheRef.get();
     if (cached.exists) return res.json({ ok: true, fromCache: true, ...cached.data().result });
 
-    const changedFilesList = (changedFiles || []).join(', ');
+    const finalChangedFiles = changedFiles || epData.changedFiles || [];
+    const changedFilesList = finalChangedFiles.join(', ');
     const prompt = explainDiffTemplate({ changedFilesList });
     const { provider, customApiKey: finalApiKey } = await getProviderConfig(uid, customApiKey);
     if (provider !== 'gemini' && !finalApiKey) {
@@ -351,7 +375,7 @@ router.post('/episodes/explain', aiLimiter, explainRules, async (req, res) => {
     };
     await cacheRef.set({ createdAt: new Date(), result: normalized });
     
-    auditLog('DATA_ACCESS', { action: 'explain_episode', projectId, episodeId, diffHash }, req);
+    auditLog('DATA_ACCESS', { action: 'explain_episode', projectId, episodeId, diffHash: finalDiffHash }, req);
     return res.json({ ok: true, ...normalized });
   } catch (err) {
     return sendError(res, req, err, ErrorCodes.AI_SERVICE_UNAVAILABLE);

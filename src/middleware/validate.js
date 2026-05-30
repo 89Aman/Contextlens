@@ -93,7 +93,7 @@ const logCallRules = [
 const explainRules = [
   isUUID('projectId'),
   isUUID('episodeId'),
-  isNonEmptyString('diffHash', 128),
+  body('diffHash').optional().trim().isLength({ max: 128 }),
   body('changedFiles').optional().isArray({ max: 100 }),
   body('customApiKey').optional().trim().isString(),
   handleValidation,

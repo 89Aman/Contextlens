@@ -90,6 +90,50 @@ async function generateWithRetry(model, contents, generationConfig) {
 }
 
 /**
+ * Default models per provider. Used when no model is specified or when
+ * a model name from a different provider is passed (e.g. 'gemini-1.5-pro'
+ * to the OpenAI path).
+ */
+const PROVIDER_DEFAULTS = {
+  gemini: 'gemini-1.5-pro',
+  openai: 'gpt-4o',
+  anthropic: 'claude-3-5-sonnet-latest',
+};
+
+/**
+ * Returns true if a model name clearly belongs to a different provider.
+ * Prevents sending 'gemini-1.5-pro' to OpenAI or 'gpt-4o' to Anthropic.
+ *
+ * @param {string} modelName - The model name to check.
+ * @param {string} provider - The target provider ('gemini'|'openai'|'anthropic').
+ * @returns {boolean}
+ */
+function isWrongProviderModel(modelName, provider) {
+  if (!modelName) return false;
+  const lower = modelName.toLowerCase();
+  if (provider === 'openai') return /^(gemini|claude|models\/)/i.test(lower);
+  if (provider === 'anthropic') return /^(gemini|gpt-|o1-|o3-|models\/)/i.test(lower);
+  if (provider === 'gemini') return /^(gpt-|o1-|o3-|claude|sk-)/i.test(lower);
+  return false;
+}
+
+/**
+ * Resolves the model name for a given provider. If the supplied model name
+ * belongs to a different provider (e.g. routes hardcode 'gemini-1.5-pro'),
+ * it falls back to the provider's default model.
+ *
+ * @param {string|undefined} modelName - The requested model name.
+ * @param {string} provider - The target provider.
+ * @returns {string} A valid model name for the provider.
+ */
+function resolveModelForProvider(modelName, provider) {
+  if (!modelName || isWrongProviderModel(modelName, provider)) {
+    return PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
+  }
+  return modelName;
+}
+
+/**
  * Calls the AI model with a standardized interface.
  * Supports custom API keys and providers via options.customApiKey and options.provider.
  * 
@@ -102,6 +146,7 @@ async function callGemini(prompt, modelName, options = {}) {
   const sanitizedPrompt = redactText(prompt);
   const timeoutMs = Number(process.env.VERTEX_TIMEOUT_MS || 30000);
   const provider = options.provider || 'gemini';
+  const resolvedModel = resolveModelForProvider(modelName, provider);
   
   if (provider === 'openai') {
     const openai = new OpenAI({ apiKey: options.customApiKey });
@@ -109,7 +154,7 @@ async function callGemini(prompt, modelName, options = {}) {
     try {
       const response = await Promise.race([
         openai.chat.completions.create({
-          model: modelName || 'gpt-4o',
+          model: resolvedModel,
           messages: [{ role: 'user', content: sanitizedPrompt }],
           temperature: options.temperature ?? 0.2,
           max_tokens: options.maxOutputTokens ?? 1024,
@@ -120,7 +165,7 @@ async function callGemini(prompt, modelName, options = {}) {
       const text = response.choices[0]?.message?.content || '';
       return {
         id: randomUUID(),
-        model: response.model || modelName || 'gpt-4o',
+        model: response.model || resolvedModel,
         text,
         structured: safeJsonParse(text),
         tokens: {
@@ -139,7 +184,7 @@ async function callGemini(prompt, modelName, options = {}) {
     try {
       const response = await Promise.race([
         anthropic.messages.create({
-          model: modelName || 'claude-3-5-sonnet-latest',
+          model: resolvedModel,
           max_tokens: options.maxOutputTokens ?? 1024,
           temperature: options.temperature ?? 0.2,
           messages: [{ role: 'user', content: sanitizedPrompt }],
@@ -149,7 +194,7 @@ async function callGemini(prompt, modelName, options = {}) {
       const text = response.content.map(c => c.text).join('') || '';
       return {
         id: randomUUID(),
-        model: response.model || modelName || 'claude-3-5-sonnet-latest',
+        model: response.model || resolvedModel,
         text,
         structured: safeJsonParse(text),
         tokens: {

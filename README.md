@@ -2,6 +2,9 @@
 
 > **Bridging the gap between code and context.**
 
+> [!WARNING]
+> **ContextLens is currently under active development.** Some features and integrations are in preview states, and certain functions may not work as expected or change without notice. Please use with caution in production workspaces.
+
 ContextLens is an AI-driven developer companion that captures your coding intent, tracks development "episodes," and provides high-level project insights through a unified dashboard and CLI. It ensures that the *why* behind every change is never lost.
 
 ## 🌟 Features
