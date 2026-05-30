@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { exchangeCustomTokenForIdToken, refreshIdToken } from './apiClient';
 
 // Must match: "<publisher>.<name>" from package.json
-const EXTENSION_ID = 'ContextLens.contextlens';
+const EXTENSION_ID = 'Noventra-Labs.contextlens';
 
 const API_BASE = 'https://contextlens-backend-001.web.app/api';
 const SECRET_ID_TOKEN_KEY = 'contextlens.auth.idToken';

@@ -24,7 +24,7 @@ Organize your coding context cleanly by starting discrete tracking episodes. Gro
 Automatically captures file diffs and active file context during AI assistant interactions, tracking code changes and intent continuously.
 
 ### 🔐 Seamless Auth Sync
-Integrated authentication utilizing secure callbacks (`vscode://ContextLens.contextlens`) connecting Firebase Auth directly from the web dashboard.
+Integrated authentication utilizing secure callbacks (`vscode://Noventra-Labs.contextlens`) connecting Firebase Auth directly from the web dashboard.
 
 ### 📊 Deep Dashboard Integration
 Instant navigation hooks to open your specific projects, active branches, or episodes directly in the web dashboard for deep timeline inspection.

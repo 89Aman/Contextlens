@@ -18,11 +18,13 @@ export default defineConfig({
     cssCodeSplit: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Split Firebase into its own chunk (~250KB gzip)
-          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-          // Split React + Router into a framework chunk
-          framework: ['react', 'react-dom', 'react-router-dom'],
+        manualChunks(id) {
+          if (id.includes('node_modules/firebase')) {
+            return 'firebase';
+          }
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/react-router-dom')) {
+            return 'framework';
+          }
         },
       },
     },

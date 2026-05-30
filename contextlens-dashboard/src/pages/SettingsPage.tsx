@@ -137,7 +137,7 @@ export function SettingsPage() {
               </div>
             </div>
             <a
-              href={`https://contextlens-backend-001.web.app/api/auth/login?uid=${user?.uid}&callback=vscode://ContextLens.contextlens`}
+              href={`https://contextlens-backend-001.web.app/api/auth/login?uid=${user?.uid}&callback=vscode://Noventra-Labs.contextlens`}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-black text-sm font-bold
                          hover:brightness-110 active:scale-[0.97]
                          transition-all duration-150 ease-out flex-shrink-0 shadow-lg shadow-primary/10"
