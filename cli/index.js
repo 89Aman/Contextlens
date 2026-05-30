@@ -654,6 +654,49 @@ program
                   type: 'object',
                   properties: {}
                 }
+              },
+              {
+                name: 'search_context',
+                description: 'Search for past episodes and AI calls by topic or content',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    query: { type: 'string', description: 'The search term or query' }
+                  },
+                  required: ['query']
+                }
+              },
+              {
+                name: 'get_episode_details',
+                description: 'Get detailed information about a specific episode and its AI calls',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    episodeId: { type: 'string', description: 'The UUID of the episode' }
+                  },
+                  required: ['episodeId']
+                }
+              },
+              {
+                name: 'get_recent_episodes',
+                description: 'Get recently accessed or modified episodes',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    limit: { type: 'number', description: 'Maximum number of episodes to return (optional, default 5)' }
+                  }
+                }
+              },
+              {
+                name: 'explain_past_changes',
+                description: 'Request an AI explanation and audit of changes in a specific past episode',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    episodeId: { type: 'string', description: 'The UUID of the episode' }
+                  },
+                  required: ['episodeId']
+                }
               }
             ]
           });
@@ -812,6 +855,123 @@ program
             ].join('\n');
 
             sendToolResult(id, responseText);
+            break;
+          }
+
+          case 'search_context': {
+            const projectId = config.projectId;
+            if (!token) {
+              sendToolError(id, 'Not authenticated.');
+              return;
+            }
+            if (!projectId) {
+              sendToolError(id, 'No project configured.');
+              return;
+            }
+
+            const res = await apiRequest('/search', 'POST', {
+              projectId,
+              q: args.query
+            }, token, apiBaseUrl);
+
+            const episodesText = (res.episodes || []).map(e => `- [${e.status}] "${e.label}" (ID: ${e.id}, Branch: ${e.branchName})`).join('\n') || 'None';
+            const callsText = (res.calls || []).map(c => `- Call ID: ${c.id}\n  Episode ID: ${c.episodeId}\n  Source: ${c.source}\n  Prompt: ${c.promptText.substring(0, 100)}...\n  Response: ${c.modelResponse.substring(0, 100)}...`).join('\n\n') || 'None';
+            
+            const text = [
+              `### Search Results for "${args.query}"`,
+              `**Episodes:**`,
+              episodesText,
+              `\n**AI Calls:**`,
+              callsText
+            ].join('\n');
+            sendToolResult(id, text);
+            break;
+          }
+
+          case 'get_episode_details': {
+            const projectId = config.projectId;
+            if (!token) {
+              sendToolError(id, 'Not authenticated.');
+              return;
+            }
+            if (!projectId) {
+              sendToolError(id, 'No project configured.');
+              return;
+            }
+
+            const res = await apiRequest('/episodes/get', 'POST', {
+              projectId,
+              episodeId: args.episodeId
+            }, token, apiBaseUrl);
+
+            const ep = res.episode;
+            const calls = res.calls || [];
+            const callsText = calls.map(c => `[${new Date(c.createdAt?._seconds * 1000 || c.createdAt).toLocaleString()}] ${c.source.toUpperCase()} (${c.modelName || 'Unknown model'})\n- Prompt: ${c.promptText}\n- Response: ${c.modelResponse}`).join('\n\n') || 'No calls in this episode.';
+            
+            const text = [
+              `### Episode Details: "${ep.label}"`,
+              `- ID: ${ep.id}`,
+              `- Status: ${ep.status}`,
+              `- Branch: ${ep.branchName}`,
+              `- Started At: ${new Date(ep.startedAt?._seconds * 1000 || ep.startedAt).toLocaleString()}`,
+              `- Changed Files: ${ep.changedFiles?.join(', ') || 'None'}`,
+              `\n**AI Activity Log:**`,
+              callsText
+            ].join('\n');
+            sendToolResult(id, text);
+            break;
+          }
+
+          case 'get_recent_episodes': {
+            const projectId = config.projectId;
+            if (!token) {
+              sendToolError(id, 'Not authenticated.');
+              return;
+            }
+            if (!projectId) {
+              sendToolError(id, 'No project configured.');
+              return;
+            }
+
+            const res = await apiRequest('/episodes/list', 'POST', {
+              projectId,
+              limit: args.limit
+            }, token, apiBaseUrl);
+
+            const text = [
+              `### Recent Coding Episodes`,
+              (res.episodes || []).map(e => `- [${e.status}] "${e.label}" (ID: ${e.id}, Branch: ${e.branchName}, Started: ${new Date(e.startedAt?._seconds * 1000 || e.startedAt).toLocaleString()})`).join('\n') || 'No episodes found.'
+            ].join('\n');
+            sendToolResult(id, text);
+            break;
+          }
+
+          case 'explain_past_changes': {
+            const projectId = config.projectId;
+            if (!token) {
+              sendToolError(id, 'Not authenticated.');
+              return;
+            }
+            if (!projectId) {
+              sendToolError(id, 'No project configured.');
+              return;
+            }
+
+            const res = await apiRequest('/episodes/explain', 'POST', {
+              projectId,
+              episodeId: args.episodeId
+            }, token, apiBaseUrl);
+
+            const text = [
+              `### AI Explanation of Past Episode Diffs`,
+              `**Summary:**`,
+              res.summary || 'No changes to explain.',
+              `\n**Risks Identified:**`,
+              (res.risks && res.risks.length > 0) ? res.risks.map(r => `- ${r}`).join('\n') : '- None',
+              `\n**Suggested Checks:**`,
+              (res.checks && res.checks.length > 0) ? res.checks.map(c => `- ${c}`).join('\n') : '- None'
+            ].join('\n');
+            sendToolResult(id, text);
             break;
           }
 

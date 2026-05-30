@@ -465,6 +465,73 @@ router.post('/search', searchRules, async (req, res) => {
 });
 
 /**
+ * POST /episodes/get
+ * Retrieves detailed information about a specific episode including its calls.
+ */
+router.post('/episodes/get', explainRules, async (req, res) => {
+  const { uid } = req.user;
+  const { projectId, episodeId } = req.body;
+  
+  try {
+    const epRef = await verifyEpisodeOwnership(uid, projectId, episodeId, req, res);
+    if (!epRef) return;
+
+    const epDoc = await epRef.get();
+    const epData = epDoc.data();
+
+    // Fetch associated calls
+    const callsCol = epRef.collection('calls');
+    const callsSnap = await callsCol.get();
+    const calls = callsSnap.docs.map(c => ({ id: c.id, ...c.data() }));
+
+    return res.json({
+      ok: true,
+      episode: {
+        id: epDoc.id,
+        ...epData
+      },
+      calls
+    });
+  } catch (err) {
+    return sendError(res, req, err);
+  }
+});
+
+/**
+ * POST /episodes/list
+ * Lists episodes for a project, sorted by startedAt descending.
+ */
+router.post('/episodes/list', searchRules, async (req, res) => {
+  const { uid } = req.user;
+  const { projectId, limit: limitVal } = req.body;
+  
+  try {
+    const projectRef = await verifyProjectOwnership(uid, projectId, req, res);
+    if (!projectRef) return;
+
+    const episodesCol = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes');
+    
+    // Sort by startedAt desc
+    let q = episodesCol.orderBy('startedAt', 'desc');
+    
+    const parsedLimit = parseInt(limitVal, 10);
+    if (!isNaN(parsedLimit) && parsedLimit > 0) {
+      q = q.limit(parsedLimit);
+    }
+    
+    const snap = await q.get();
+    const episodes = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    return res.json({
+      ok: true,
+      episodes
+    });
+  } catch (err) {
+    return sendError(res, req, err);
+  }
+});
+
+/**
  * POST /episodes/close
  * Marks a coding episode as closed.
  * 
@@ -550,6 +617,98 @@ router.post('/settings/update', async (req, res) => {
     await db.collection('users').doc(uid).collection('settings').doc('global').set(update, { merge: true });
     auditLog('SETTINGS_UPDATE', { action: 'update_ai_settings', provider: aiProvider || '(unchanged)' }, req);
     return res.json({ ok: true, saved: true });
+  } catch (err) {
+    return sendError(res, req, err);
+  }
+});
+
+// GET /episodes/:episodeId - Get episode details
+router.get('/episodes/:episodeId', getEpisodeRules, async (req, res) => {
+  const { uid } = req.user;
+  const { projectId, episodeId } = req.params;
+
+  try {
+    // Verify project ownership
+    const projectRef = await verifyProjectOwnership(uid, projectId, req, res);
+    if (!projectRef) return;
+
+    // Verify episode ownership
+    const epRef = await verifyEpisodeOwnership(uid, projectId, episodeId, req, res);
+    if (!epRef) return;
+
+    // Get episode data
+    const epDoc = await epRef.get();
+    const epData = epDoc.data();
+
+    // Get call count and basic stats
+    const callsCol = epRef.collection('calls');
+    const callsSnap = await callsCol.get();
+    const callCount = callsSnap.size;
+
+    // Get recent calls (last 5)
+    const recentCalls = [];
+    callsSnap.docs.slice(0, 5).forEach(callDoc => {
+      const callData = callDoc.data();
+      recentCalls.push({
+        id: callDoc.id,
+        ...callData
+      });
+    });
+
+    auditLog('DATA_ACCESS', { action: 'get_episode', projectId, episodeId }, req);
+    return res.json({
+      ok: true,
+      episode: {
+        id: epDoc.id,
+        ...epData,
+        callCount,
+        recentCalls
+      }
+    });
+  } catch (err) {
+    return sendError(res, req, err);
+  }
+});
+
+// GET /episodes/list - List episodes for a project
+router.post('/episodes/list', listEpisodesRules, async (req, res) => {
+  const { uid } = req.user;
+  const { projectId, limit = 10, includeClosed = false } = req.body;
+
+  try {
+    // Verify project ownership
+    const projectRef = await verifyProjectOwnership(uid, projectId, req, res);
+    if (!projectRef) return;
+
+    // Get episodes collection
+    const episodesCol = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes');
+
+    // Build query
+    let query = episodesCol.orderBy('startedAt', 'desc');
+    if (!includeClosed) {
+      query = query.where('status', '==', 'open');
+    }
+    if (limit) {
+      query = query.limit(limit);
+    }
+
+    // Execute query
+    const episodesSnap = await query.get();
+    const episodes = [];
+
+    episodesSnap.docs.forEach(epDoc => {
+      const epData = epDoc.data();
+      episodes.push({
+        id: epDoc.id,
+        ...epData
+      });
+    });
+
+    auditLog('DATA_ACCESS', { action: 'list_episodes', projectId, count: episodes.length }, req);
+    return res.json({
+      ok: true,
+      episodes
+    });
   } catch (err) {
     return sendError(res, req, err);
   }

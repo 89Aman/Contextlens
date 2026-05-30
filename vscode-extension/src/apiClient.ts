@@ -44,6 +44,52 @@ export interface SummarizeBranchResponse {
   review_risks: string[];
 }
 
+export interface GetEpisodeResponse {
+  id: string;
+  label: string | null;
+  branchName: string;
+  status: string;
+  startedAt: string;
+  endedAt: string | null;
+  callCount: number;
+  changedFiles: string[];
+  latestDiffHash: string | null;
+  manualNotes: string | null;
+  recentCalls: Array<{
+    id: string;
+    createdAt: string;
+    source: string;
+    intentTag: string | null;
+    promptText: string;
+    modelName: string;
+    modelResponse: string;
+    branchName: string | null;
+    activeFilePath: string | null;
+    relatedFiles: string[];
+    diffSnapshot: any;
+    diffHash: string | null;
+    todoMatches: string[];
+    latencyMs: number;
+    tokenUsage: any;
+    status: string;
+  }>;
+}
+
+export interface ListEpisodesResponse {
+  items: Array<{
+    id: string;
+    label: string | null;
+    branchName: string;
+    status: string;
+    startedAt: string;
+    endedAt: string | null;
+    callCount: number;
+    changedFiles: string[];
+    latestDiffHash: string | null;
+    manualNotes: string | null;
+  }>;
+}
+
 /**
  * Internal helper to perform an HTTP(S) request using Node.js native modules.
  * This ensures zero-dependency operation within the VS Code extension environment.
@@ -159,16 +205,17 @@ async function refreshIdToken(refreshToken: string): Promise<{
 }
 
 /**
- * Authenticated POST request to the backend.
+ * Authenticated request to the backend.
  * Pulls the Bearer token from AuthManager's SecretStorage.
  * On 401, attempts a token refresh before giving up.
  *
  * @template T The expected type of the response.
  * @param path The API endpoint path (e.g., '/projects/create').
- * @param body Optional JSON body for the POST request.
+ * @param method The HTTP method (default: 'POST')
+ * @param body Optional JSON body for the request.
  * @returns The parsed JSON response body cast to type T.
  */
-async function request<T>(path: string, body?: object): Promise<T> {
+async function request<T>(path: string, methodOrBody: string | object = 'POST', body?: object): Promise<T> {
   const authManager = getAuthManager();
   let token = await authManager.getIdToken();
 
@@ -188,18 +235,26 @@ async function request<T>(path: string, body?: object): Promise<T> {
     }
   }
 
+  let method = 'POST';
+  let requestBody = body;
+  if (typeof methodOrBody === 'string') {
+    method = methodOrBody;
+  } else if (typeof methodOrBody === 'object') {
+    requestBody = methodOrBody;
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
   };
 
-  const jsonBody = body ? JSON.stringify(body) : undefined;
+  const jsonBody = requestBody ? JSON.stringify(requestBody) : undefined;
   if (jsonBody) {
     headers['Content-Length'] = Buffer.byteLength(jsonBody).toString();
   }
 
   let res = await httpRequest(`${API_BASE}${path}`, {
-    method: 'POST',
+    method,
     headers,
     body: jsonBody,
   });
@@ -212,7 +267,7 @@ async function request<T>(path: string, body?: object): Promise<T> {
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
         res = await httpRequest(`${API_BASE}${path}`, {
-          method: 'POST',
+          method,
           headers,
           body: jsonBody,
         });
@@ -411,6 +466,26 @@ export class ApiClient {
     anthropicApiKey?: string;
   }): Promise<{ saved: boolean }> {
     return request('/settings/update', body);
+  }
+
+  // ── Episode Retrieval ────────────────────────────────────────────────────
+
+  static async getEpisode(projectId: string, episodeId: string): Promise<GetEpisodeResponse> {
+    const response = await request<{ ok: boolean; episode: GetEpisodeResponse }>(`/episodes/${episodeId}?projectId=${encodeURIComponent(projectId)}`, 'GET');
+    return response.episode;
+  }
+
+  /**
+   * Lists episodes for a project.
+   *
+   * @param projectId The project ID
+   * @param limit Maximum number of episodes to return (default: 10)
+   * @param includeClosed Whether to include closed episodes (default: false)
+   * @returns Array of episode objects
+   */
+  static async listEpisodes(projectId: string, limit: number = 10, includeClosed: boolean = false): Promise<GetEpisodeResponse[]> {
+    const response = await request<{ ok: boolean; episodes: GetEpisodeResponse[] }>('/episodes/list', 'POST', { projectId, limit, includeClosed });
+    return response.episodes;
   }
 
   // ── Dashboard URLs ───────────────────────────────────────────────────────

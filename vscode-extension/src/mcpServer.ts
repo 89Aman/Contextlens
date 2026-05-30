@@ -120,6 +120,78 @@ export function startMcpServer() {
         return;
       }
 
+      if (req.method === 'POST' && url.pathname === '/search') {
+        const body = await getBody(req);
+        const store = EpisodeStore.get();
+        const projectId = store.getProjectId();
+        if (!projectId) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'No active project' }));
+          return;
+        }
+        const result = await ApiClient.post('/search', {
+          projectId,
+          q: body.q || ''
+        });
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/get-episode') {
+        const body = await getBody(req);
+        const store = EpisodeStore.get();
+        const projectId = store.getProjectId();
+        if (!projectId || !body.episodeId) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'projectId and episodeId are required' }));
+          return;
+        }
+        const result = await ApiClient.post('/episodes/get', {
+          projectId,
+          episodeId: body.episodeId
+        });
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/list-episodes') {
+        const body = await getBody(req);
+        const store = EpisodeStore.get();
+        const projectId = store.getProjectId();
+        if (!projectId) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'No active project' }));
+          return;
+        }
+        const result = await ApiClient.post('/episodes/list', {
+          projectId,
+          limit: body.limit
+        });
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/explain-past-changes') {
+        const body = await getBody(req);
+        const store = EpisodeStore.get();
+        const projectId = store.getProjectId();
+        if (!projectId || !body.episodeId) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'projectId and episodeId are required' }));
+          return;
+        }
+        const result = await ApiClient.post('/episodes/explain', {
+          projectId,
+          episodeId: body.episodeId
+        });
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Not Found' }));
     } catch (err: any) {

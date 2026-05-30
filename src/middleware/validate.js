@@ -119,6 +119,20 @@ const closeEpisodeRules = [
   handleValidation,
 ];
 
+// Validation rules for new episode retrieval endpoints
+const getEpisodeRules = [
+  isUUID('projectId'),
+  isUUID('episodeId'),
+  handleValidation,
+];
+
+const listEpisodesRules = [
+  isUUID('projectId'),
+  body('limit').optional().isInt({ min: 1, max: 100 }),
+  body('includeClosed').optional().isBoolean(),
+  handleValidation,
+];
+
 module.exports = {
   handleValidation,
   createProjectRules,
@@ -128,4 +142,6 @@ module.exports = {
   summarizeRules,
   searchRules,
   closeEpisodeRules,
+  getEpisodeRules,
+  listEpisodesRules,
 };
