@@ -128,25 +128,57 @@ export class AuthManager implements vscode.UriHandler {
    * @returns A promise that resolves with the UID and ID token once sign-in is complete.
    */
   async signIn(): Promise<{ uid: string; token: string }> {
-    // Defensively fall back to 'vscode' — vscode.env.uriScheme can be empty
-    // in some environments, causing vscode.Uri.parse to throw:
-    // "Error processing argument at index 0, conversion failure from undefined"
-    const scheme = (vscode.env.uriScheme && vscode.env.uriScheme.length > 0)
-      ? vscode.env.uriScheme
-      : 'vscode';
+    // ── Build callback URI ──────────────────────────────────────────────
+    // vscode.env.uriScheme can be undefined, null, empty, or the literal
+    // string "undefined" in certain VS Code forks (Cursor, Codium),
+    // WSL Remote, or during very early activation before the property is
+    // hydrated.  Any of those would cause vscode.Uri.parse to throw:
+    //   "Error processing argument at index 0, conversion failure from undefined"
+    let rawScheme: string | undefined;
+    try {
+      rawScheme = vscode.env.uriScheme;
+    } catch {
+      // Property access itself can throw in some exotic embedders
+      rawScheme = undefined;
+    }
+
+    const scheme =
+      (typeof rawScheme === 'string' && rawScheme.length > 0 && rawScheme !== 'undefined')
+        ? rawScheme
+        : 'vscode';
+
     const callbackUriStr = `${scheme}://${EXTENSION_ID}`;
     const loginUrl = `${API_BASE}/auth/login?callback=${encodeURIComponent(callbackUriStr)}`;
 
+    // ── Validate the URL string before handing it to the native layer ───
+    if (!loginUrl || typeof loginUrl !== 'string' || loginUrl.length === 0) {
+      const msg = 'ContextLens: Could not build sign-in URL. Please reinstall the extension.';
+      vscode.window.showErrorMessage(msg);
+      throw new Error(msg);
+    }
+
+    // ── Parse URI ───────────────────────────────────────────────────────
     let loginUri: vscode.Uri;
     try {
       loginUri = vscode.Uri.parse(loginUrl, true);
     } catch (err: any) {
       console.error('[ContextLens] Failed to parse login URL:', loginUrl, err);
-      vscode.window.showErrorMessage(`ContextLens: Could not open sign-in page — ${err.message}`);
+      vscode.window.showErrorMessage(
+        `ContextLens: Could not open sign-in page — ${err.message}`
+      );
       throw err;
     }
 
-    await vscode.env.openExternal(loginUri);
+    // ── Open in browser ─────────────────────────────────────────────────
+    try {
+      await vscode.env.openExternal(loginUri);
+    } catch (err: any) {
+      console.error('[ContextLens] Failed to open external URL:', loginUri.toString(), err);
+      vscode.window.showErrorMessage(
+        `ContextLens: Could not open browser for sign-in — ${err.message}`
+      );
+      throw err;
+    }
 
     return new Promise<{ uid: string; token: string }>((resolve) => {
       this.signInResolver = resolve;

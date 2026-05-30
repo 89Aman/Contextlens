@@ -117,7 +117,10 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         await authManager.ensureSignedIn();
       } catch (err: any) {
-        // Error already shown by ensureSignedIn
+        // Show error only if not already surfaced by ensureSignedIn/signIn
+        if (err?.message && !err.message.startsWith('ContextLens:')) {
+          vscode.window.showErrorMessage(`ContextLens: Sign-in failed — ${err.message}`);
+        }
       }
     })
   );

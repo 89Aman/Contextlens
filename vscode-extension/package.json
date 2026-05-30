@@ -2,7 +2,7 @@
   "name": "contextlens",
   "displayName": "ContextLens",
   "description": "AI-driven developer companion for capturing coding intent and context.",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "publisher": "Noventra-Labs",
   "author": {
     "name": "Aman Sharma",
