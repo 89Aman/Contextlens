@@ -17,6 +17,8 @@ const {
   summarizeRules,
   searchRules,
   closeEpisodeRules,
+  getEpisodeRules,
+  listEpisodesRules,
 } = require('../middleware/validate');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
