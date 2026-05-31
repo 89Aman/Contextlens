@@ -1,5 +1,7 @@
 # ContextLens
-
+[!NOTICE]
+> **Please start this repo if you like this.**
+ 
 > **Bridging the gap between code and context.**
 
 > [!WARNING]
