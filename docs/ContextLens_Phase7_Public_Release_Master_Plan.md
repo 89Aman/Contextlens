@@ -160,9 +160,10 @@ Create step-by-step guides
 ## Package Layout
 
 ``` text
-@contextlens/mcp
-@contextlens/cli
-@contextlens/sdk
+@contextlens/mcp                              # stdio MCP bridge (bin: contextlens-mcp bridge)
+@contextlens/mcp-cli                          # MCP client config CLI (bin: contextlens-mcp)
+@contextlens/sdk                              # plugin SDK
+@noventra-labs/contextlens-cli                # user-facing backend CLI (bin: contextlens)
 ```
 
 ## Tasks

@@ -1,10 +1,10 @@
 {
-  "name": "@contextlens/cli",
+  "name": "@contextlens/mcp-cli",
   "version": "1.0.0",
-  "description": "Command line interface for ContextLens MCP platform",
+  "description": "Command line interface for managing ContextLens MCP clients",
   "main": "dist/index.js",
   "bin": {
-    "contextlens": "dist/index.js"
+    "contextlens-mcp": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
