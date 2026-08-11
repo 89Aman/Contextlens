@@ -6,7 +6,7 @@ module.exports = {
   },
   testMatch: ['**/__tests__/**/*.test.{ts,tsx}', '**/*.test.{ts,tsx}'],
   transform: {
-    '^.+\\.tsx?$': ['babel-jest', { presets: ['@babel/preset-react', '@babel/preset-typescript'] }],
+    '^.+\\.tsx?$': ['babel-jest', { presets: ['@babel/preset-env', ['@babel/preset-react', { runtime: 'automatic' }], '@babel/preset-typescript'] }],
   },
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',

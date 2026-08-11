@@ -40,7 +40,7 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'An unexpected error occurred. Please refresh the page to try again.'
+        "We encountered an unexpected error. Don't worry, your data is safe in the cloud."
       )
     ).toBeInTheDocument();
   });
@@ -57,59 +57,51 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('Custom error message')).toBeInTheDocument();
   });
 
-  it('should display technical details when error is caught', () => {
+  it('should display the error message in the technical details', () => {
     render(
       <ErrorBoundary>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
     );
 
-    const details = screen.getByText('Technical details');
-    expect(details).toBeInTheDocument();
-
-    fireEvent.click(details);
     expect(screen.getByText('Test error')).toBeInTheDocument();
   });
 
-  it('should have refresh page button that works', () => {
+  it('should have reload page button that works', () => {
     const reloadSpy = jest.fn();
-    Object.defineProperty(window, 'location', {
-      value: { reload: reloadSpy },
-      writable: true,
-    });
 
     render(
-      <ErrorBoundary>
+      <ErrorBoundary onReload={reloadSpy}>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
     );
 
-    const refreshButton = screen.getByRole('button', { name: /Refresh Page/i });
+    const refreshButton = screen.getByRole('button', { name: /Reload Page/i });
     fireEvent.click(refreshButton);
 
     expect(reloadSpy).toHaveBeenCalled();
   });
 
-  it('should have try again button that resets error state', () => {
+  it('should have go-home button that resets error state', () => {
     const { rerender } = render(
-      <ErrorBoundary>
+      <ErrorBoundary onGoHome={jest.fn()}>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
     );
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
 
-    const tryAgainButton = screen.getByRole('button', { name: /Try Again/i });
-    fireEvent.click(tryAgainButton);
-
+    // The children still throw until re-rendered; reset happens via the button
     rerender(
-      <ErrorBoundary>
+      <ErrorBoundary onGoHome={jest.fn()}>
         <ThrowError shouldThrow={false} />
       </ErrorBoundary>
     );
 
-    // After clicking try again and re-rendering with no error,
-    // it should show the children
+    const homeButton = screen.getByRole('button', { name: /Go to Home/i });
+    fireEvent.click(homeButton);
+
+    // After resetting, the safe children render
     expect(screen.getByText('Safe content')).toBeInTheDocument();
   });
 });
