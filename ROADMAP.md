@@ -1,57 +1,60 @@
 # ContextLens Roadmap
 
-## Current: v1.0 — Foundation Release
+## v1 — Foundation Release (current scope)
 
-### ✅ Completed
-- Episode-based context tracking
-- MCP server with 9 tools, 5 resources, 5 prompts
-- Security layer (token rotation, rate limiting, input validation)
-- Plugin system for extensibility
-- Multi-provider AI support (Gemini, GPT, Claude, Ollama, DeepSeek)
-- Background job queue for expensive operations
-- Structured logging and metrics
-- Health check system
-- Auto-setup for Claude Desktop and Cursor
-- CI/CD pipeline
+**Goal:** restore developer context to AI coding sessions. Everything below is
+considered in-scope for the public v1 release.
 
-### 🔜 In Progress
-- Documentation website
-- npm package publishing
-- VS Code Marketplace optimization
+### ✅ In v1 (done or in-progress)
+
+- [x] VS Code capture (diffs, commits, file saves, branch switches)
+- [x] Episode management (create/close/auto-name, stale detection, pause/resume)
+- [x] Local MCP server (`127.0.0.1:3012`, rotating token auth, rate limiting)
+- [x] MCP bridge (stdio JSON-RPC) for Claude Desktop, Cursor, Antigravity, Gemini CLI
+- [x] Context search (`search_context`)
+- [x] Dashboard timeline (projects, episodes, per-call transcripts)
+- [x] Manual diff explanation (`explain_diff`) and PR summary (`summarize_branch`) — AI is never auto-invoked
+- [x] Secure Firebase sync (opt-in, idempotency keys, ownership checks)
+- [x] Secret redaction (local + backend) and encrypted provider keys
+
+### v1 hardening (this sprint)
+
+- [x] Resolve duplicate CLI binaries (`contextlens` vs `contextlens-mcp`)
+- [x] Remove legacy `src/routes/api.js`
+- [x] Harden MCP auth: constant-time token compare, request IDs, body limits, replay tests
+- [x] Extend redaction patterns + crypto tests + key-rotation support
+- [x] CI matrix: backend/dashboard/cli/extension tests, bridge smoke, gitleaks, bin-conflict check
 
 ---
 
-## v1.1 — Enhanced Intelligence
+## Deferred to v1.1 or later
 
-- [ ] Repository-wide code indexing and embeddings
-- [ ] Semantic search across all episodes and code
-- [ ] Auto-episode detection (start/stop based on git activity)
+These are explicitly **out of scope for v1** to keep the launch focused.
+
+### v1.1 — Smarter capture
+
+- [ ] Autonomous background agents
+- [ ] Multi-agent workflows
+- [ ] Auto-episode detection driven by more git signals
 - [ ] Workspace-level AI summaries
-- [ ] Enhanced diff explanations with file-level context
+- [ ] Repository-wide code indexing and embeddings (semantic memory)
 
-## v1.2 — Collaboration
+### v1.1 — Platform polish
 
-- [ ] Team episode sharing
-- [ ] Multi-user project dashboards
-- [ ] Code review integration
-- [ ] PR description auto-generation from episode context
-- [ ] Slack/Discord notifications
+- [ ] Automatic commit operations
+- [ ] Team collaboration and multi-user dashboards
+- [ ] Cross-editor support (JetBrains, Zed, etc.)
+- [ ] Long-term semantic memory across projects
+- [ ] Episode retention/archival job (see [data-model.md](docs/data-model.md))
 
-## v2.0 — Platform
+### v2 — Platform
 
 - [ ] Plugin marketplace for community tools
 - [ ] Custom resource providers
 - [ ] Webhook integrations
 - [ ] REST API for external services
 - [ ] Self-hosted deployment option
-
-## v2.1 — Advanced AI
-
-- [ ] Multi-model comparison (run same prompt across providers)
-- [ ] Context-aware code completion via MCP
-- [ ] Automated code review pipelines
-- [ ] AI-powered project onboarding
-- [ ] Knowledge graph of codebase relationships
+- [ ] Slack/Discord notifications
 
 ---
 
