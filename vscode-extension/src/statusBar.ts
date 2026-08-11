@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { AuthManager } from './auth';
 import { EpisodeStore } from './episodeStore';
 import { ApiClient } from './apiClient';
+import { isCapturePaused } from './watchers';
 import type { SyncState } from './syncEngine';
 
 /**
@@ -95,7 +96,8 @@ export class ContextLensStatusBar {
 
   private renderReady() {
     const providerSuffix = this.cachedProvider ? ` · ${this.cachedProvider}` : '';
-    this.statusBarItem.text = `$(check) ContextLens: Ready${providerSuffix}`;
+    const pausedSuffix = isCapturePaused() ? ' · ⏸ Paused' : '';
+    this.statusBarItem.text = `$(check) ContextLens: Ready${providerSuffix}${pausedSuffix}`;
     this.statusBarItem.tooltip = `Signed in — AI: ${this.cachedProvider || 'Gemini (default)'}\nClick to open dashboard`;
     this.statusBarItem.command = 'contextlens.openDashboard';
     this.statusBarItem.color = new vscode.ThemeColor('statusBarItem.prominentForeground');
@@ -118,8 +120,9 @@ export class ContextLensStatusBar {
     }
 
     const providerSuffix = this.cachedProvider ? ` · ${this.cachedProvider}` : '';
+    const pausedSuffix = isCapturePaused() ? ' · ⏸ Paused' : '';
     
-    this.statusBarItem.text = `$(circle-filled) ContextLens: ${ep.name} · ${ep.callCount} calls${syncText}${providerSuffix}`;
+    this.statusBarItem.text = `$(circle-filled) ContextLens: ${ep.name} · ${ep.callCount} calls${syncText}${providerSuffix}${pausedSuffix}`;
     this.statusBarItem.tooltip = `${ep.name} on ${ep.branchName} — ${ep.callCount} AI calls. ${pending} items pending sync.\nSync: ${this.syncState}\nAI Provider: ${this.cachedProvider || 'Gemini (default)'}`;
     this.statusBarItem.command = 'contextlens.openDashboardEpisode';
     this.statusBarItem.color = this.syncState === 'offline'

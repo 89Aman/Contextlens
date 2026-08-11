@@ -54,6 +54,10 @@
         "title": "ContextLens: Close Episode"
       },
       {
+        "command": "contextlens.pauseCapture",
+        "title": "ContextLens: Pause / Resume Capture"
+      },
+      {
         "command": "contextlens.explainDiff",
         "title": "ContextLens: Explain Diff"
       },
@@ -180,7 +184,8 @@
     "test-watch": "tsc -watch -p ./",
     "pretest": "npm run test-compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./test/runTest.js"
+    "test": "mocha",
+    "test:unit": "mocha"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
@@ -193,6 +198,7 @@
     "glob": "^8.1.0",
     "mocha": "^11.3.0",
     "ts-loader": "^9.4.2",
+    "ts-node": "^10.9.2",
     "typescript": "^5.0.4",
     "webpack": "^5.81.0",
     "webpack-cli": "^5.0.2"

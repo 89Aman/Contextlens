@@ -1,0 +1,5 @@
+{
+  "require": ["./test/mocha.env.js"],
+  "spec": ["test/mcp/*.test.ts"],
+  "timeout": 20000
+}

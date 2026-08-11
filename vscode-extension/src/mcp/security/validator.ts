@@ -20,6 +20,7 @@ export enum McpErrorCode {
   TOOL_NOT_FOUND = -32004,
   VALIDATION_ERROR = -32005,
   FEATURE_DISABLED = -32006,
+  PAYLOAD_TOO_LARGE = -32007,
 }
 
 export interface ValidationResult {

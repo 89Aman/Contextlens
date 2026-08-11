@@ -3,6 +3,8 @@ import { ApiClient } from './apiClient';
 import { GitContext } from './gitContext';
 import { EpisodeStore } from './episodeStore';
 import { getAuthManager } from './auth';
+import { Redaction } from './redaction';
+import { isCapturePaused } from './watchers';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'contextlens.chatView';
@@ -71,6 +73,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       switch (data.type) {
         case 'sendMessage':
           {
+            if (isCapturePaused()) {
+              vscode.window.showInformationMessage('ContextLens capture is paused. Resume capture to log AI messages.');
+              return;
+            }
+
             const episode = EpisodeStore.get().getActiveEpisode();
             const projectId = EpisodeStore.get().getProjectId();
             if (!episode || !projectId) {
@@ -86,13 +93,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               const res = await ApiClient.logCall({
                 projectId,
                 episodeId: episode.id,
-                promptText: data.value,
+                promptText: Redaction.redact(data.value),
                 intentTag,
                 source: 'extension',
                 branchName: gitCtx.branch || undefined,
                 activeFilePath: gitCtx.activeFile || undefined,
                 relatedFiles: [],
-                diffSnapshot: gitCtx.diff || null,
+                diffSnapshot: gitCtx.diff ? Redaction.redact(gitCtx.diff) : null,
                 todoMatches: gitCtx.markers,
               });
               EpisodeStore.get().incrementCallCount();

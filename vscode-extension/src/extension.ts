@@ -7,10 +7,11 @@ import { ApiClient } from './apiClient';
 import { GitContext } from './gitContext';
 import { Telemetry } from './telemetry';
 import { createHash } from 'crypto';
-import { startWatchers } from './watchers';
+import { startWatchers, setCapturePaused, isCapturePaused } from './watchers';
 import { ContextLensStatusBar } from './statusBar';
 import { NotificationService } from './NotificationService';
 import { ErrorMapper } from './ErrorMapper';
+import { Redaction } from './redaction';
 import { startMcpServer, stopMcpServer } from './mcpServer';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -186,6 +187,22 @@ export function activate(context: vscode.ExtensionContext) {
       await EpisodeStore.get().closeEpisode();
       notifier.success('Episode closed.');
       Telemetry.log('Episode Closed');
+    })
+  );
+
+  // ── Command: Pause / Resume Capture ──────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.pauseCapture', async () => {
+      const paused = setCapturePaused(!isCapturePaused());
+      statusBar.render();
+      stateTreeProvider.refresh();
+      Telemetry.log(paused ? 'Capture Paused' : 'Capture Resumed');
+      if (paused) {
+        notifier.info('ContextLens capture paused. File saves and commits are no longer tracked.');
+      } else {
+        notifier.success('ContextLens capture resumed.');
+      }
     })
   );
 
@@ -380,6 +397,11 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
+      if (isCapturePaused()) {
+        notifier.info('ContextLens capture is paused. Resume capture to log external calls.');
+        return;
+      }
+
       const tool = await vscode.window.showQuickPick(
         ['Claude', 'ChatGPT', 'Copilot', 'Other'],
         { placeHolder: 'Which AI tool did you use?' }
@@ -411,12 +433,12 @@ export function activate(context: vscode.ExtensionContext) {
           source: 'manual_log',
           modelName: tool.toLowerCase(),
           intentTag: intentTag || undefined,
-          promptText,
-          modelResponse,
+          promptText: Redaction.redact(promptText),
+          modelResponse: Redaction.redact(modelResponse || ''),
           branchName: gitCtx.branch || undefined,
           activeFilePath: gitCtx.activeFile || undefined,
           relatedFiles: [],
-          diffSnapshot: gitCtx.diff || null,
+          diffSnapshot: gitCtx.diff ? Redaction.redact(gitCtx.diff) : null,
           todoMatches: gitCtx.markers,
         });
 

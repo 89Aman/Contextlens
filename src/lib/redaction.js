@@ -1,14 +1,22 @@
 const SENSITIVE_PATTERNS = [
-  /AIza[0-9A-Za-z\-_]{20,}/g,
+  /AIza[0-9A-Za-z\-_]{20,}/g, // Google API keys
   /(?:api[_-]?key|secret|token|password)\s*[:=]\s*['\"]?[^'\"\s]{8,}['\"]?/gi,
   /-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----/g,
-  /gh[pous]_[A-Za-z0-9_]{20,}/g,
-  /xox[baprs]-[A-Za-z0-9-]{10,}/g,
+  /gh[pous]_[A-Za-z0-9_]{20,}/g, // GitHub PATs / fine-grained tokens
+  /xox[baprs]-[A-Za-z0-9-]{10,}/g, // Slack tokens
+  /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, // JWT / Firebase ID tokens
+  /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp|jdbc):\/\/[^\s'"<>]+/gi, // DB connection strings
+  /(?:DATABASE_URL|MONGO_URI|MYSQL_URL|REDIS_URL|PG_URL|FIREBASE_(?:API_KEY|PROJECT_ID|APP_ID)|GOOGLE_APPLICATION_CREDENTIALS)\s*=\s*['\"]?[^'\"]+/gi, // .env assignments
 ];
 
 /**
  * Redacts sensitive patterns (API keys, tokens, etc.) from a string.
- * 
+ *
+ * Note: patterns operate line by line / within a single string. A secret
+ * split across multiple diff lines is not reconstructed here — the extension
+ * redacts before any content is persisted or uploaded, and truncation keeps
+ * diffs bounded.
+ *
  * @param {string} input - The text to redact.
  * @returns {string} The redacted text.
  */
