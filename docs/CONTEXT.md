@@ -30,7 +30,10 @@ ContextLens/
 │   ├── firebase.js                   # Admin SDK singletons (db, auth)
 │   ├── sentry.js                     # Sentry init (PII off, 0.1 sample)
 │   ├── prompts.js                    # Gemini prompt templates
-│   ├── routes/api.js                 # All authenticated endpoints
+│   ├── apps/
+│   │   ├── auth.js                   # Public auth app (login page, token exchange)
+│   │   ├── core.js                   # Projects/episodes/settings CRUD + search
+│   │   └── ai.js                     # AI call logging, diff explain, branch summarize
 │   ├── services/ai.js                # callGemini — multi-provider wrapper
 │   ├── middleware/
 │   │   ├── auth.js                   # requireAuth (Firebase ID token)
@@ -53,7 +56,8 @@ ContextLens/
 │   │   ├── watchers.ts               # Git/file/workspace activity
 │   │   ├── apiClient.ts              # HTTP client + 401 refresh
 │   │   ├── auth.ts                   # vscode.UriHandler + SecretStorage
-│   │   ├── mcpServer.ts              # Local HTTP server 127.0.0.1:3012
+│   │   ├── mcpServer.ts              # Local HTTP server 127.0.0.1:3012 (wires real services)
+│   │   ├── mcp/serverHandler.ts      # Pure, DI testable request handler (auth/rate/body limits)
 │   │   ├── chatViewProvider.ts       # Webview chat panel
 │   │   ├── stateTreeProvider.ts      # Activity bar tree
 │   │   ├── statusBar.ts              # Sync state indicator
@@ -167,7 +171,7 @@ users/{uid}/
 ```json
 { "ok": false, "error": { "code", "message", "retryable", "requestId", "action", "details" } }
 ```
-Never exposes `err.stack` to client (was a known leak at `routes/api.js:48-49`, fixed). Retryable/action maps drive client UX.
+Never exposes `err.stack` to client (a known stack-leak was fixed). Retryable/action maps drive client UX.
 
 ### 3.6 AI service (`src/services/ai.js` → `callGemini`)
 
@@ -218,6 +222,7 @@ TypeScript, webpack-bundled, target Node. Publisher: **Noventra-Labs**, name: `c
 | `contextlens.signOut` | Clear SecretStorage, fire onDidSignOut |
 | `contextlens.newEpisode` | Prompt label, `createEpisode` |
 | `contextlens.closeEpisode` | `closeEpisode` |
+| `contextlens.pauseCapture` | Toggle automatic capture (pauses saves/commits/branch auto-episodes) |
 | `contextlens.explainDiff` | MD5-hash diff, call explainDiff, render webview |
 | `contextlens.summarizeBranch` | Call branchSummary, toast |
 | `contextlens.openDashboard` / `…Episode` / `…Branch` | Open external dashboard URL |
@@ -278,10 +283,10 @@ onDidSaveTextDocument
 
 ### 4.8 MCP server (`mcpServer.ts`) + bridge (`mcp-bridge.js`)
 
-**Local HTTP server:** `http://127.0.0.1:3012`, random 32-byte hex secret per session, `X-MCP-Secret` header required. CORS: `*`. Endpoints:
-- `GET /status` → `{projectId, episodeId, authenticated}`
-- `POST /start-episode`, `/close-episode`, `/log-call`, `/explain-diff`
-- `POST /search`, `/get-episode`, `/list-episodes`, `/explain-past-changes`
+**Local HTTP server:** `http://127.0.0.1:3012`, random 32-byte hex secret per session, `X-MCP-Secret` header required (constant-time compare). Every request gets an `X-Request-Id`, bodies are capped at 1 MiB (413), malformed JSON → 400, rejections are logged without secrets. CORS: `*`. The request logic lives in the pure `mcp/serverHandler.ts` (dependency-injected for tests); `mcpServer.ts` wires real services. Endpoints:
+- Registry: `POST /mcp/tools/list`, `/mcp/tools/call`, `/mcp/resources/list`, `/mcp/resources/read`, `/mcp/prompts/list`, `/mcp/prompts/get`, `/mcp/notifications/recent`
+- `GET /mcp/session`, `/mcp/health`, `/mcp/errors`, `/mcp/metrics`
+- Legacy: `GET /status`; `POST /start-episode`, `/close-episode`, `/log-call`, `/explain-diff`, `/search`, `/get-episode`, `/list-episodes`, `/explain-past-changes`
 
 **Bridge (stdio):** line-buffered JSON-RPC 2.0 over stdin/stdout. `protocolVersion: 2024-11-05`. All `console.*` redirected to stderr to protect stdout. Reads `CONTEXTLENS_MCP_SECRET` from env. 9 tools: `get_status`, `start_episode`, `close_episode`, `log_ai_call`, `explain_diff`, `search_context`, `get_episode_details`, `get_recent_episodes`, `explain_past_changes`. ECONNREFUSED → user-friendly error.
 
@@ -418,7 +423,7 @@ All real-time via `onSnapshot` with 3s timeout fallback. Memoized by `queryKey` 
 ### 6.6 Test coverage
 - **Backend:** `src/__tests__/lib/errors.test.js`, `src/__tests__/lib/redaction.test.js`, `src/__tests__/middleware/auth.test.js`. Coverage 0 thresholds (placeholder).
 - **Dashboard:** `src/__tests__/components/ErrorBoundary.test.tsx`, `src/__tests__/lib/api.test.ts`. Mocks `firebase` for `auth.currentUser.getIdToken`.
-- **Extension:** mocha test script (no test files in src yet).
+- **Extension:** mocha + ts-node unit tests for `src/mcp/**` (`npm test` in `vscode-extension/`), covering the security layer and HTTP handler (auth 401s, rate limits, body limits, validation).
 
 ---
 
@@ -450,7 +455,7 @@ All real-time via `onSnapshot` with 3s timeout fallback. Memoized by `queryKey` 
 
 ## 8. Common patterns
 
-- **Adding a new AI call:** add prompt to `src/prompts.js`, add route in `src/routes/api.js` under `aiLimiter`, add validate rules, call `callGemini`, audit log.
+- **Adding a new AI call:** add prompt to `src/prompts.js`, add route in `src/apps/ai.js` under `aiLimiter`, add validate rules, call `callGemini`, audit log.
 - **Adding a new redaction pattern:** append to `redaction.rules` array in both `vscode-extension/src/redaction.ts` and `src/lib/redaction.js`. Backend re-runs redaction on stored prompts/responses.
 - **Adding a new VS Code command:** register in `package.json` `contributes.commands`, implement in `extension.ts`, optional keybinding in `keybindings` (gated on `contextlens.enableShortcuts`).
 - **Adding a new dashboard page:** create in `src/pages/`, add to `routes/index.tsx`, add nav item in `Sidebar.tsx`/`TopBar.tsx`.
@@ -468,7 +473,9 @@ All real-time via `onSnapshot` with 3s timeout fallback. Memoized by `queryKey` 
 | `firebase.js` | Admin SDK init; `db`, `auth` singletons |
 | `sentry.js` | Sentry google-cloud-serverless + profiling init |
 | `prompts.js` | `explainDiffTemplate`, `branchSummaryTemplate` (injection-safe) |
-| `routes/api.js` | All authenticated endpoints; ownership/idempotency/encryption helpers |
+| `apps/auth.js` | Public auth app: login page + token exchange |
+| `apps/core.js` | Projects, episodes, settings CRUD + search |
+| `apps/ai.js` | AI call logging, diff explain, branch summarize |
 | `services/ai.js` | `callGemini` multi-provider wrapper with retry + timeout |
 | `middleware/auth.js` | `requireAuth` — Firebase ID token verify |
 | `middleware/auditLog.js` | JSON stdout audit logger |

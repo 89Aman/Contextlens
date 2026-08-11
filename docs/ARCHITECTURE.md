@@ -16,6 +16,21 @@ ContextLens is designed to bridge the gap between local development activity and
 - **Data Persistence**: Firestore stores project metadata, episode history, and captured AI interaction logs.
 - **Security**: Firebase Admin SDK validates ID tokens on every request.
 
+#### Active route structure
+
+The backend exposes three Express apps, each exported as a Firebase Function v2
+from `src/index.js`. There is no `src/routes/` module anymore — routes live in
+the apps:
+
+| App | File | Endpoints |
+|-----|------|-----------|
+| Auth | `src/apps/auth.js` | `GET /auth/login`, `POST /auth/exchange` |
+| Core | `src/apps/core.js` | projects, episodes CRUD/export/list, settings get/update, search |
+| AI | `src/apps/ai.js` | calls/log, episodes/explain, branches/summarize |
+
+When adding an endpoint, add it to the matching app, register validation rules
+in `src/middleware/validate.js`, and export the app from `src/index.js`.
+
 ### 3. Web Dashboard (Frontend)
 - **Visualization**: A React-based SPA that provides a timeline view of development activity.
 - **Project Management**: Allows users to manage repository links and project-level settings.
