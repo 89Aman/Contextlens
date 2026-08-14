@@ -33,6 +33,8 @@ These are explicitly **out of scope for v1** to keep the launch focused.
 
 ### v1.1 — Smarter capture
 
+- [x] Episode retention/archival job (scheduled Cloud Function; see [data-model.md](docs/data-model.md))
+- [x] Semantic search across episodes (embeddings + vector ranking; `POST /search/index` + `/search/semantic`)
 - [ ] Autonomous background agents
 - [ ] Multi-agent workflows
 - [ ] Auto-episode detection driven by more git signals
@@ -45,7 +47,6 @@ These are explicitly **out of scope for v1** to keep the launch focused.
 - [ ] Team collaboration and multi-user dashboards
 - [ ] Cross-editor support (JetBrains, Zed, etc.)
 - [ ] Long-term semantic memory across projects
-- [ ] Episode retention/archival job (see [data-model.md](docs/data-model.md))
 
 ### v2 — Platform
 

@@ -35,6 +35,8 @@ ContextLens/
 │   │   ├── core.js                   # Projects/episodes/settings CRUD + search
 │   │   └── ai.js                     # AI call logging, diff explain, branch summarize
 │   ├── services/ai.js                # callGemini — multi-provider wrapper
+│   ├── services/retention.js         # Scheduled archival/deletion + call pruning
+│   ├── lib/embeddings.js             # embedText + cosine ranking (semantic search)
 │   ├── middleware/
 │   │   ├── auth.js                   # requireAuth (Firebase ID token)
 │   │   ├── auditLog.js               # JSON stdout audit logger
@@ -135,6 +137,8 @@ AI endpoints add `aiLimiter` (30/15min).
 | POST | `/api/episodes/explain` | yes | **aiLimiter** | Cache at `episodes/{eid}/cache/{diffHash}`; Gemini |
 | POST | `/api/branches/summarize` | yes | **aiLimiter** | Gemini PR summary |
 | POST | `/api/search` | yes | apiLimiter | Bounded 50 episodes × 10 calls, cap 100 |
+| POST | `/api/search/index` | yes | **aiLimiter** | Manual embedding generation → `users/{uid}/projects/{pid}/vectors/{callId}` |
+| POST | `/api/search/semantic` | yes | **aiLimiter** | Embed query + cosine rank over indexed vectors (Anthropic unsupported) |
 | POST | `/api/settings/get` | yes | apiLimiter | Returns `aiProvider` + `has{Provider}Key` flags only |
 | POST | `/api/settings/update` | yes | apiLimiter | Provider whitelist: `none/gemini/openai/anthropic`; encrypts keys |
 
@@ -477,6 +481,8 @@ All real-time via `onSnapshot` with 3s timeout fallback. Memoized by `queryKey` 
 | `apps/core.js` | Projects, episodes, settings CRUD + search |
 | `apps/ai.js` | AI call logging, diff explain, branch summarize |
 | `services/ai.js` | `callGemini` multi-provider wrapper with retry + timeout |
+| `services/retention.js` | Scheduled retention/archival + per-episode call capping |
+| `lib/embeddings.js` | `embedText` (Gemini/OpenAI) + `cosineSimilarity`/`rankBySimilarity` |
 | `middleware/auth.js` | `requireAuth` — Firebase ID token verify |
 | `middleware/auditLog.js` | JSON stdout audit logger |
 | `middleware/rateLimiter.js` | `apiLimiter`/`authLimiter`/`aiLimiter` |

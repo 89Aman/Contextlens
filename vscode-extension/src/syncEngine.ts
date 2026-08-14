@@ -28,6 +28,18 @@ export type SyncState =
   | 'paused-auth'  // Auth expired, waiting for re-auth
   | 'failed';      // All retries exhausted
 
+/** Operational sync metrics (no user content). */
+export interface SyncMetrics {
+  flushCount: number;
+  itemsSynced: number;
+  itemsFailed: number;
+  totalRetries: number;
+  lastFlushDurationMs: number;
+  avgFlushDurationMs: number;
+  currentQueueSize: number;
+  offlineCount: number;
+}
+
 /**
  * SyncEngine is a background worker that ensures all development activity (AI calls, episodes)
  * is eventually synchronized with the ContextLens backend, even if the user is offline.
@@ -62,6 +74,18 @@ export class SyncEngine {
 
   // Callbacks for state observers (status bar, etc.)
   private stateListeners: Array<(state: SyncState) => void> = [];
+
+  // Operational metrics (no user content)
+  private metrics: SyncMetrics = {
+    flushCount: 0,
+    itemsSynced: 0,
+    itemsFailed: 0,
+    totalRetries: 0,
+    lastFlushDurationMs: 0,
+    avgFlushDurationMs: 0,
+    currentQueueSize: 0,
+    offlineCount: 0,
+  };
 
   private readonly BASE_FLUSH_MS = 30_000;           // flush every 30s normally
   private readonly FAST_FLUSH_MS = 5_000;            // flush every 5s when queue > 10
@@ -154,6 +178,11 @@ export class SyncEngine {
     return this._state;
   }
 
+  /** Operational metrics snapshot (no user content). */
+  getMetrics(): SyncMetrics {
+    return { ...this.metrics, currentQueueSize: this.queue.length };
+  }
+
   /** Subscribe to state changes. */
   onStateChange(listener: (state: SyncState) => void): void {
     this.stateListeners.push(listener);
@@ -181,8 +210,10 @@ export class SyncEngine {
 
     this.isFlushing = true;
     this.setState('syncing');
+    const flushStart = Date.now();
     const successfulIds = new Set<string>();
     const failedPermanentlyIds = new Set<string>();
+    let flushRetries = 0;
 
     try {
       // Take first CHUNK_SIZE items only
@@ -196,6 +227,7 @@ export class SyncEngine {
           successfulIds.add(item.id);
         } catch (err: any) {
           item.retries++;
+          flushRetries++;
 
           const isNotFoundError = err.message && (err.message.includes('not found') || err.message.includes('deleted'));
 
@@ -213,6 +245,7 @@ export class SyncEngine {
           // Network error — go offline, stop sending
           if (isNetworkError(err)) {
             this.isOnline = false;
+            this.metrics.offlineCount += 1;
             this.setState('offline');
             break;
           }
@@ -228,6 +261,18 @@ export class SyncEngine {
           q => !successfulIds.has(q.id) && !failedPermanentlyIds.has(q.id)
         );
       }
+
+      // Record operational metrics (no content)
+      const durationMs = Date.now() - flushStart;
+      this.metrics.flushCount += 1;
+      this.metrics.itemsSynced += successfulIds.size;
+      this.metrics.itemsFailed += failedPermanentlyIds.size;
+      this.metrics.totalRetries += flushRetries;
+      this.metrics.lastFlushDurationMs = durationMs;
+      this.metrics.avgFlushDurationMs = this.metrics.flushCount > 0
+        ? Math.round(this.metrics.avgFlushDurationMs * (this.metrics.flushCount - 1) / this.metrics.flushCount + durationMs / this.metrics.flushCount)
+        : durationMs;
+      this.metrics.currentQueueSize = this.queue.length;
 
     } finally {
       this.isFlushing = false;

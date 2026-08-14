@@ -91,12 +91,19 @@ or double-increment `callCount`.
 
 ## Retention
 
-There is no automatic retention/expiry job yet. Recommendations for v1.1:
+A scheduled Cloud Function (`retentionService`, cron `0 3 * * *` UTC by
+default) enforces retention automatically:
 
-- Add a scheduled Cloud Function to archive `closed` episodes older than a
-  configurable window (default 365 days).
-- Delete archived episodes after a second window (default 730 days).
-- Cap `calls` per episode (e.g. 1000) with oldest-first pruning.
+- **Call capping:** episodes exceeding `RETENTION_MAX_CALLS_PER_EPISODE`
+  (default 1000) have their oldest calls pruned and `callCount` corrected.
+- **Archival:** closed episodes older than `RETENTION_ARCHIVE_AFTER_DAYS`
+  (default 365) are marked `status: 'archived'` with an `archivedAt` timestamp
+  and excluded from default listings.
+- **Deletion:** archived episodes older than `RETENTION_DELETE_AFTER_DAYS`
+  (default 730) are deleted along with their `calls` and `cache` subcollections.
+
+All three windows are configurable via environment variables; see
+`docs/ENV_VARS.md`.
 
 ## Immutability rules
 

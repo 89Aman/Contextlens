@@ -150,6 +150,13 @@ export class EpisodeStore {
   }
 
   /**
+   * Returns operational sync metrics (no user content).
+   */
+  public getSyncMetrics() {
+    return this.syncEngine?.getMetrics() ?? null;
+  }
+
+  /**
    * Manually triggers a flush of all pending operations in the SyncEngine.
    */
   public async forceSync(): Promise<void> {

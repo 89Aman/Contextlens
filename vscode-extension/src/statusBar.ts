@@ -106,6 +106,7 @@ export class ContextLensStatusBar {
 
   private renderActiveEpisode(ep: any) {
     const sync = EpisodeStore.get().getSyncStatus();
+    const metrics = EpisodeStore.get().getSyncMetrics();
     const pending = sync.pending || this.syncPending;
 
     let syncText = '';
@@ -123,7 +124,10 @@ export class ContextLensStatusBar {
     const pausedSuffix = isCapturePaused() ? ' · ⏸ Paused' : '';
     
     this.statusBarItem.text = `$(circle-filled) ContextLens: ${ep.name} · ${ep.callCount} calls${syncText}${providerSuffix}${pausedSuffix}`;
-    this.statusBarItem.tooltip = `${ep.name} on ${ep.branchName} — ${ep.callCount} AI calls. ${pending} items pending sync.\nSync: ${this.syncState}\nAI Provider: ${this.cachedProvider || 'Gemini (default)'}`;
+    const metricLine = metrics
+      ? `\nSync: ${metrics.flushCount} flushes · ${metrics.avgFlushDurationMs}ms avg · ${metrics.itemsSynced} synced / ${metrics.itemsFailed} dropped · ${metrics.totalRetries} retries`
+      : '';
+    this.statusBarItem.tooltip = `${ep.name} on ${ep.branchName} — ${ep.callCount} AI calls. ${pending} items pending sync.\nSync: ${this.syncState}\nAI Provider: ${this.cachedProvider || 'Gemini (default)'}${metricLine}`;
     this.statusBarItem.command = 'contextlens.openDashboardEpisode';
     this.statusBarItem.color = this.syncState === 'offline'
       ? new vscode.ThemeColor('statusBarItem.warningForeground')

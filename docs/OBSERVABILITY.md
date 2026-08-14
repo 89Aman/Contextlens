@@ -29,19 +29,22 @@ Recorded by `MetricsCollector` in the VS Code extension:
 ### Sync engine (extension)
 
 Tracked via `SyncEngine` state (`idle | pending | syncing | synced |
-retrying | offline | paused-auth | failed`):
+retrying | offline | paused-auth | failed`) and `getMetrics()` (no user
+content):
 
-- Sync latency (flush duration).
-- Sync retry count (per item).
+- Sync latency (`lastFlushDurationMs`, `avgFlushDurationMs`).
+- Sync retry count (`totalRetries`), items synced / dropped.
 - Offline queue size (pending item count).
 - Token refresh failures (auth events, no token values).
+- Surfaced in the VS Code status bar tooltip.
 
 ### Backend
 
 - Request counts and error rates per route (via `auditLog` structured events:
   event type, request id, uid, path — no bodies).
-- AI-analysis latency and cost per request (duration, token usage — not the
-  prompt/response text).
+- AI-analysis latency per request (`durationMs` on `explain_episode` /
+  `summarize_branch` audit events) and token usage from the provider.
+- Retention job run stats (`retention_run` event: archived/deleted/pruned).
 - Redaction count (how many stored values matched a sensitive pattern).
 
 ## What we NEVER record
