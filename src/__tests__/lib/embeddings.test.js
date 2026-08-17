@@ -52,6 +52,18 @@ describe('rankBySimilarity', () => {
     expect(ranked.length).toBe(2);
   });
 
+  it('filters out candidates below minScore', () => {
+    const ranked = rankBySimilarity(query, candidates, 10, 0.999);
+    expect(ranked.map((r) => r.id)).toEqual(['exact']);
+  });
+
+  it('includes candidates at exactly minScore', () => {
+    const exact = [{ id: 'edge', vector: [0.5, 0, 0] }];
+    const ranked = rankBySimilarity([1, 0, 0], exact, 10, 0.5);
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0].id).toBe('edge');
+  });
+
   it('attaches scores', () => {
     const ranked = rankBySimilarity(query, candidates, 1);
     expect(ranked[0].score).toBeGreaterThan(0.99);

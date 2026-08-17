@@ -40,7 +40,7 @@ const searchContext: McpToolDefinition = {
         limit: args.limit || 10,
       });
 
-      if (res.error) { throw new Error(res.error); }
+      if (res.error) { throw new Error(res.error.message || res.error.code || JSON.stringify(res.error)); }
 
       const resultsText = (res.results || []).map((r: any, i: number) =>
         `#${i + 1} (score ${r.score})\n  Call ID: ${r.callId}\n  Episode ID: ${r.episodeId}\n  Branch: ${r.branchName || 'N/A'}\n  Source: ${r.source || 'N/A'}\n  Text: ${(r.text || '').substring(0, 200)}`
@@ -57,7 +57,7 @@ const searchContext: McpToolDefinition = {
       q: args.query || '',
     });
 
-    if (res.error) { throw new Error(res.error); }
+    if (res.error) { throw new Error(res.error.message || res.error.code || JSON.stringify(res.error)); }
 
     const episodesText = (res.episodes || []).map((e: any) =>
       `- [${e.status}] "${e.label}" (ID: ${e.id}, Branch: ${e.branchName})`

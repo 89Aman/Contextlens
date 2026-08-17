@@ -28,6 +28,42 @@ const {
 
 const app = createBaseApp();
 
+/**
+ * Run `fn` over `items` with at most `limit` tasks in flight.
+ * Resolves in input order; per-item errors must be handled by `fn`.
+ */
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
+/**
+ * Resolve the embedding provider for semantic search, or short-circuit with a
+ * canonical CONFIG_ERROR (500) when AI is not configured or the provider has
+ * no embeddings API. Returns null after sending a response.
+ */
+async function getEmbeddingProvider(uid, req, res) {
+  const { provider, customApiKey, configuredProvider } = await getProviderConfig(uid, null);
+  if (configuredProvider === 'none') {
+    res.status(500).json(typedError(ErrorCodes.CONFIG_ERROR, 'No AI provider configured. Configure Gemini or OpenAI for semantic search.', { requestId: req.id }));
+    return null;
+  }
+  if (provider === 'anthropic') {
+    res.status(500).json(typedError(ErrorCodes.CONFIG_ERROR, 'Anthropic has no embeddings API. Configure Gemini or OpenAI for semantic search.', { requestId: req.id }));
+    return null;
+  }
+  return { provider, customApiKey };
+}
+
 // AI routes require authentication
 app.use(requireAuth);
 app.use(aiLimiter);
@@ -234,14 +270,11 @@ app.post('/search/index', indexSearchRules, async (req, res) => {
     const projectRef = await verifyProjectOwnership(uid, projectId, req, res);
     if (!projectRef) return;
 
-    const { provider, customApiKey } = await getProviderConfig(uid, null);
-    if (provider === 'anthropic') {
-      return res.status(400).json(
-        typedError(ErrorCodes.CONFIG_ERROR, 'Anthropic has no embeddings API. Configure Gemini or OpenAI for semantic search.', { requestId: req.id })
-      );
-    }
+    const embeddingCfg = await getEmbeddingProvider(uid, req, res);
+    if (!embeddingCfg) return;
 
     const MAX_INDEX_PER_RUN = 200;
+    const EMBED_CONCURRENCY = 10;
     const vectorsCol = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('vectors');
 
     let calls;
@@ -265,13 +298,13 @@ app.post('/search/index', indexSearchRules, async (req, res) => {
     let skipped = 0;
     let failed = 0;
 
-    for (const call of calls) {
+    await mapLimit(calls, EMBED_CONCURRENCY, async (call) => {
       const vectorDoc = vectorsCol.doc(call.id);
       if (!force) {
         const existing = await vectorDoc.get();
         if (existing.exists) {
           skipped += 1;
-          continue;
+          return;
         }
       }
 
@@ -279,14 +312,14 @@ app.post('/search/index', indexSearchRules, async (req, res) => {
       const textToEmbed = cd.promptText || cd.modelResponse;
       if (!textToEmbed) {
         skipped += 1;
-        continue;
+        return;
       }
 
       try {
-        const { vector, model } = await embedText(textToEmbed, { provider, customApiKey });
+        const { vector, model } = await embedText(textToEmbed, embeddingCfg);
         await vectorDoc.set({
           embedding: vector,
-          text: String(cd.promptText || '').slice(0, 500),
+          text: String(cd.promptText || cd.modelResponse || '').slice(0, 500),
           episodeId: call.ref.parent.parent.id,
           callId: call.id,
           branchName: cd.branchName || null,
@@ -295,10 +328,18 @@ app.post('/search/index', indexSearchRules, async (req, res) => {
           indexedAt: new Date(),
         });
         indexed += 1;
-      } catch {
+      } catch (err) {
         failed += 1;
+        console.warn(JSON.stringify({
+          severity: 'WARNING',
+          event: 'embedding_failed',
+          callId: call.id,
+          episodeId: call.ref.parent.parent.id,
+          provider: embeddingCfg.provider,
+          error: err.message,
+        }));
       }
-    }
+    });
 
     auditLog('DATA_WRITE', { action: 'index_semantic', projectId, episodeId: episodeId || null, indexed, skipped, failed }, req);
     return res.json({ ok: true, indexed, skipped, failed });
@@ -320,23 +361,20 @@ app.post('/search/semantic', semanticSearchRules, async (req, res) => {
     const projectRef = await verifyProjectOwnership(uid, projectId, req, res);
     if (!projectRef) return;
 
-    const { provider, customApiKey } = await getProviderConfig(uid, null);
-    if (provider === 'anthropic') {
-      return res.status(400).json(
-        typedError(ErrorCodes.CONFIG_ERROR, 'Anthropic has no embeddings API. Configure Gemini or OpenAI for semantic search.', { requestId: req.id })
-      );
-    }
+    const embeddingCfg = await getEmbeddingProvider(uid, req, res);
+    if (!embeddingCfg) return;
 
-    const { vector } = await embedText(q, { provider, customApiKey });
+    const { vector } = await embedText(q, embeddingCfg);
 
     const vectorsCol = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('vectors');
     const snap = await vectorsCol.orderBy('indexedAt', 'desc').limit(2000).get();
 
     const candidates = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const ranked = rankBySimilarity(vector, candidates, limit);
+    const parsedMin = Number(process.env.SEMANTIC_SCORE_THRESHOLD);
+    const minScore = Number.isFinite(parsedMin) ? parsedMin : 0.3;
+    const ranked = rankBySimilarity(vector, candidates, limit, minScore);
 
     const results = ranked
-      .filter((r) => r.score > 0)
       .map((r) => ({
         callId: r.callId || r.id,
         episodeId: r.episodeId || null,
@@ -346,10 +384,10 @@ app.post('/search/semantic', semanticSearchRules, async (req, res) => {
         score: Math.round(r.score * 1000) / 1000,
       }));
 
-    auditLog('DATA_ACCESS', { action: 'search_semantic', projectId, queryLength: q.length, results: results.length }, req);
+    auditLog('DATA_ACCESS', { action: 'search_semantic', projectId, queryLength: q.length, results: results.length, minScore }, req);
     return res.json({ ok: true, results });
   } catch (err) {
-    return sendError(res, req, err);
+    return sendError(res, req, err, ErrorCodes.AI_SERVICE_UNAVAILABLE);
   }
 });
 

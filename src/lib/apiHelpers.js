@@ -94,8 +94,15 @@ async function getProviderConfig(uid, defaultApiKey) {
         }));
         customApiKey = null;
       }
-      
-      return { provider: provider === 'none' ? 'gemini' : provider, customApiKey };
+
+      // `configuredProvider` preserves the raw settings value ('none' stays 'none')
+      // so callers can surface a config error instead of silently falling back
+      // to the default provider when no AI is configured.
+      return {
+        provider: provider === 'none' ? 'gemini' : provider,
+        customApiKey,
+        configuredProvider: provider,
+      };
     }
   } catch (err) {
     console.warn(JSON.stringify({
@@ -105,7 +112,7 @@ async function getProviderConfig(uid, defaultApiKey) {
       error: err.message,
     }));
   }
-  return { provider: 'gemini', customApiKey: defaultApiKey };
+  return { provider: 'gemini', customApiKey: defaultApiKey, configuredProvider: 'gemini' };
 }
 
 /**

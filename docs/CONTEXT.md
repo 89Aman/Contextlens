@@ -209,7 +209,7 @@ AES-256-GCM at-rest for user API keys. Format: `enc:v1:<ivHex>:<authTagHex>:<cip
 
 **Required:** `GOOGLE_CLOUD_PROJECT` (alias `GCLOUD_PROJECT`), `CLIENT_FIREBASE_API_KEY`, `CLIENT_FIREBASE_AUTH_DOMAIN`, `CLIENT_FIREBASE_PROJECT_ID`.
 **Prod-required (throws if missing):** `SETTINGS_ENCRYPTION_KEY`.
-**Optional:** `VERTEX_LOCATION=us-central1`, `VERTEX_MODEL=gemini-1.5-pro`, `VERTEX_TIMEOUT_MS=30000`, `VERTEX_RETRY_ATTEMPTS=2`, `USE_VERTEX=true`, `ALLOWED_ORIGINS` (default `localhost:3000,vscode-webview://*`), `SENTRY_DSN`, `NODE_ENV`, `K_SERVICE` (prod detect).
+**Optional:** `VERTEX_LOCATION=us-central1`, `VERTEX_MODEL=gemini-1.5-pro`, `VERTEX_TIMEOUT_MS=30000`, `VERTEX_RETRY_ATTEMPTS=2`, `USE_VERTEX=true`, `ALLOWED_ORIGINS` (default `localhost:3000,vscode-webview://*`), `SENTRY_DSN`, `NODE_ENV`, `K_SERVICE` (prod detect), `RETENTION_SCHEDULE`, `RETENTION_ARCHIVE_AFTER_DAYS`, `RETENTION_DELETE_AFTER_DAYS`, `RETENTION_MAX_CALLS_PER_EPISODE`, `EMBEDDINGS_MODEL`, `SEMANTIC_SCORE_THRESHOLD`.
 
 ---
 

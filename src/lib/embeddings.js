@@ -71,16 +71,19 @@ async function embedText(text, options = {}) {
 
 /**
  * Rank a set of { id, vector } candidates against a query vector.
+ * Candidates scoring below `minScore` are excluded.
  *
  * @param {number[]} queryVector
  * @param {Array<{id: string, vector: number[], [k:string]: any}>} candidates
  * @param {number} limit
+ * @param {number} [minScore=0]
  * @returns {Array<{id: string, score: number, [k:string]: any}>}
  */
-function rankBySimilarity(queryVector, candidates, limit = 10) {
+function rankBySimilarity(queryVector, candidates, limit = 10, minScore = 0) {
   const scored = candidates
     .filter((c) => Array.isArray(c.vector) && c.vector.length > 0)
     .map((c) => ({ ...c, score: cosineSimilarity(queryVector, c.vector) }))
+    .filter((c) => c.score >= minScore)
     .sort((x, y) => y.score - x.score);
   return scored.slice(0, limit);
 }
