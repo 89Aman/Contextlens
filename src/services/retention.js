@@ -17,9 +17,38 @@ const DEFAULT_ARCHIVE_AFTER_DAYS = 365;
 const DEFAULT_DELETE_AFTER_DAYS = 730;
 const DEFAULT_MAX_CALLS_PER_EPISODE = 1000;
 const BATCH_LIMIT = 400; // Firestore batch limit is 500; stay under
+const PAGE_SIZE = 300;
 
 function daysAgo(days) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Page through an entire query (limit + document-snapshot cursor), avoiding
+ * unbounded in-memory scans of collectionGroup results.
+ */
+async function queryAll(query, pageSize = PAGE_SIZE) {
+  const docs = [];
+  let cursor = null;
+  for (;;) {
+    let q = query.limit(pageSize);
+    if (cursor) q = q.startAfter(cursor);
+    const snap = await q.get();
+    if (snap.empty) break;
+    docs.push(...snap.docs);
+    if (snap.docs.length < pageSize) break;
+    cursor = snap.docs[snap.docs.length - 1];
+  }
+  return docs;
+}
+
+/**
+ * Vector subcollection for the project owning `epRef`
+ * (users/{uid}/projects/{pid}/episodes/{eid}).
+ */
+function getVectorsCollection(db, epRef) {
+  const parts = epRef.path.split('/');
+  return db.collection('users').doc(parts[1]).collection('projects').doc(parts[3]).collection('vectors');
 }
 
 /** Number of calls to prune so the episode is back under `maxCalls`. */
@@ -60,11 +89,11 @@ async function runRetention(opts = {}) {
 
   try {
     // ── Phase 1: prune over-cap episodes ────────────────────────────────────
-    const overCap = await db.collectionGroup('episodes')
-      .where('callCount', '>', maxCalls)
-      .get();
+    const overCap = await queryAll(
+      db.collectionGroup('episodes').where('callCount', '>', maxCalls)
+    );
 
-    for (const ep of overCap.docs) {
+    for (const ep of overCap) {
       try {
         const toPrune = excessCalls(ep.data().callCount, maxCalls);
         if (toPrune <= 0) continue;
@@ -76,11 +105,13 @@ async function runRetention(opts = {}) {
 
         if (calls.empty) continue;
 
+        const vectorsCol = getVectorsCollection(db, ep.ref);
         let batch = db.batch();
         let ops = 0;
         for (const call of calls.docs) {
           batch.delete(call.ref);
-          ops += 1;
+          batch.delete(vectorsCol.doc(call.id));
+          ops += 2;
           if (ops >= BATCH_LIMIT) {
             await batch.commit();
             batch = db.batch();
@@ -99,11 +130,11 @@ async function runRetention(opts = {}) {
 
     // ── Phase 2: archive stale closed episodes ──────────────────────────────
     const archiveCutoff = daysAgo(archiveAfterDays);
-    const closedEpisodes = await db.collectionGroup('episodes')
-      .where('status', '==', 'closed')
-      .get();
+    const closedEpisodes = await queryAll(
+      db.collectionGroup('episodes').where('status', '==', 'closed')
+    );
 
-    for (const ep of closedEpisodes.docs) {
+    for (const ep of closedEpisodes) {
       try {
         if (!isEligibleForArchive(ep.data(), archiveCutoff)) continue;
         await ep.ref.update({ status: 'archived', archivedAt: admin.firestore.FieldValue.serverTimestamp() });
@@ -116,11 +147,11 @@ async function runRetention(opts = {}) {
 
     // ── Phase 3: delete stale archived episodes ─────────────────────────────
     const deleteCutoff = daysAgo(deleteAfterDays);
-    const archivedEpisodes = await db.collectionGroup('episodes')
-      .where('status', '==', 'archived')
-      .get();
+    const archivedEpisodes = await queryAll(
+      db.collectionGroup('episodes').where('status', '==', 'archived')
+    );
 
-    for (const ep of archivedEpisodes.docs) {
+    for (const ep of archivedEpisodes) {
       try {
         if (!isEligibleForDeletion(ep.data(), deleteCutoff)) continue;
 
@@ -132,6 +163,25 @@ async function runRetention(opts = {}) {
           let ops = 0;
           for (const docRef of subDocs) {
             batch.delete(docRef);
+            ops += 1;
+            if (ops >= BATCH_LIMIT) {
+              await batch.commit();
+              batch = db.batch();
+              ops = 0;
+            }
+          }
+          if (ops > 0) await batch.commit();
+        }
+
+        // Cascade-delete the episode's vectors so semantic search stops
+        // returning stale results for deleted episodes.
+        const vectorsCol = getVectorsCollection(db, ep.ref);
+        const epVectors = await vectorsCol.where('episodeId', '==', ep.id).get();
+        if (!epVectors.empty) {
+          let batch = db.batch();
+          let ops = 0;
+          for (const vec of epVectors.docs) {
+            batch.delete(vec.ref);
             ops += 1;
             if (ops >= BATCH_LIMIT) {
               await batch.commit();
@@ -157,4 +207,4 @@ async function runRetention(opts = {}) {
   return stats;
 }
 
-module.exports = { runRetention, excessCalls, isEligibleForArchive, isEligibleForDeletion, daysAgo };
+module.exports = { runRetention, excessCalls, isEligibleForArchive, isEligibleForDeletion, daysAgo, queryAll };
