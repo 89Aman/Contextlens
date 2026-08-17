@@ -2,8 +2,21 @@ const http = require('http');
 const https = require('https');
 const { saveCredentials, loadCredentials, clearCredentials, getApiBase, loadConfig } = require('./utils/config');
 
-// Firebase Web API key (same as used by the VS Code extension and dashboard)
-const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || loadConfig().firebaseApiKey || 'AIzaSyAQ2U7k1Z1h0myROPoj9upUMxJ-r_ZZ3ME';
+// Firebase Web API key (same as used by the VS Code extension and dashboard).
+// Must be provided via FIREBASE_API_KEY env var or "firebaseApiKey" in config; no hardcoded fallback.
+function getFirebaseApiKey() {
+  return process.env.FIREBASE_API_KEY || loadConfig().firebaseApiKey || '';
+}
+
+function requireFirebaseApiKey() {
+  const key = getFirebaseApiKey();
+  if (!key) {
+    throw new Error(
+      'Missing Firebase API key. Set the FIREBASE_API_KEY environment variable or add "firebaseApiKey" to ~/.contextlens/config.json.'
+    );
+  }
+  return key;
+}
 
 /**
  * Perform a raw HTTPS request. Returns { status, body }.
@@ -41,7 +54,7 @@ function httpsRequest(url, options) {
  * Exchange a Firebase custom token for an ID token + refresh token.
  */
 async function exchangeCustomToken(customToken) {
-  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${FIREBASE_API_KEY}`;
+  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${requireFirebaseApiKey()}`;
   const res = await httpsRequest(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -67,7 +80,7 @@ async function exchangeCustomToken(customToken) {
  * Refresh an expired ID token using the refresh token.
  */
 async function refreshIdToken(refreshToken) {
-  const url = `https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`;
+  const url = `https://securetoken.googleapis.com/v1/token?key=${requireFirebaseApiKey()}`;
   const res = await httpsRequest(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

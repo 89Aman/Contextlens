@@ -58,6 +58,8 @@ Verify your session at any time:
 ```bash
 contextlens whoami
 ```
+> [!NOTE]
+> The Firebase Web API key (a public client identifier) is read from the `FIREBASE_API_KEY` environment variable or the `firebaseApiKey` field in `~/.contextlens/config.json`. There is no hardcoded fallback; if neither is set, `login` fails with instructions. The extension and dashboard receive the same key at build time.
 
 ### 2. Initialize a Project
 Navigate to your repository and initialize your workspace:
