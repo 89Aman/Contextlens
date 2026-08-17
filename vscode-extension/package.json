@@ -204,6 +204,10 @@
     "webpack-cli": "^5.0.2"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.5"
+    "serialize-javascript": "^7.0.5",
+    "brace-expansion@<2": "^1.1.18",
+    "brace-expansion@2": "^2.1.4",
+    "fast-uri": "^3.1.5",
+    "js-yaml@4": "^4.3.1"
   }
 }
