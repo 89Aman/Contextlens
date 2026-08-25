@@ -5,7 +5,7 @@
  * Tokens auto-expire and regenerate, preventing replay attacks.
  */
 
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 
 export interface TokenInfo {
   /** The current token value */
@@ -14,6 +14,18 @@ export interface TokenInfo {
   createdAt: number;
   /** When this token expires (ms epoch) */
   expiresAt: number;
+}
+
+/**
+ * Constant-time string comparison. Hashes both sides with SHA-256 to
+ * normalize length, then compares digests with timingSafeEqual so token
+ * length and content differences do not leak via timing.
+ */
+function safeEqual(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const ha = createHash('sha256').update(a, 'utf8').digest();
+  const hb = createHash('sha256').update(b, 'utf8').digest();
+  return timingSafeEqual(ha, hb);
 }
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -92,17 +104,18 @@ export class TokenManager {
 
   /**
    * Validate a token. Accepts current token or previous token within grace period.
+   * Uses constant-time comparison to avoid timing side-channels.
    */
   validate(token: string): boolean {
     if (!token) return false;
 
     // Check current token
-    if (this.currentToken && token === this.currentToken.token) {
+    if (this.currentToken && safeEqual(token, this.currentToken.token)) {
       return true;
     }
 
     // Check previous token within grace period
-    if (this.previousToken && token === this.previousToken.token) {
+    if (this.previousToken && safeEqual(token, this.previousToken.token)) {
       const graceCutoff = this.previousToken.expiresAt + GRACE_PERIOD_MS;
       if (Date.now() < graceCutoff) {
         return true;

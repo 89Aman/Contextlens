@@ -116,8 +116,10 @@ Items: ENH-009 Cost Tracker, ENH-010 Export, ENH-015 Write Batching
 
 ---
 
-#### [MODIFY] [api.js](file:///c:/Users/shasa/Projects/ContextLens/src/routes/api.js)
-- **ENH-010**: Add `POST /episodes/export` — fetches episode + all calls, formats as Markdown, returns as `text/markdown`.
+#### [MODIFY] [core.js](file:///c:/Users/shasa/Projects/ContextLens/src/apps/core.js)
+- **ENH-010**: Add `POST /episodes/export` �?" fetches episode + all calls, formats as Markdown, returns as `text/markdown`.
+
+#### [MODIFY] [ai.js](file:///c:/Users/shasa/Projects/ContextLens/src/apps/ai.js)
 - **ENH-015**: Refactor `POST /calls/log` to use `db.batch()` for the call doc write + callCount increment instead of separate `set()` + `runTransaction()`.
 
 #### [MODIFY] [validate.js](file:///c:/Users/shasa/Projects/ContextLens/src/middleware/validate.js)

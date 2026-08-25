@@ -19,23 +19,31 @@ const AUTH_TAG_LENGTH = 16; // 128 bits
 const PREFIX = 'enc:v1:';
 
 /**
- * Returns the 32-byte encryption key derived from the env var, or null
- * if encryption is not configured.
+ * Normalizes a 32-byte key string (64 hex chars or raw 32 bytes) to a Buffer.
  *
+ * @param {string} raw
  * @returns {Buffer|null}
  */
-function getEncryptionKey() {
-  const raw = process.env.SETTINGS_ENCRYPTION_KEY;
+function normalizeKey(raw) {
   if (!raw) return null;
-  // Accept hex-encoded (64 chars) or raw 32-byte string
   if (raw.length === 64 && /^[0-9a-fA-F]+$/.test(raw)) {
     return Buffer.from(raw, 'hex');
   }
   if (raw.length === 32) {
     return Buffer.from(raw, 'utf8');
   }
-  console.error('[ContextLens] SETTINGS_ENCRYPTION_KEY must be 32 bytes (64 hex chars). Encryption disabled.');
+  console.error('[ContextLens] Encryption key must be 32 bytes (64 hex chars). Encryption disabled.');
   return null;
+}
+
+/**
+ * Returns the 32-byte encryption key derived from the env var, or null
+ * if encryption is not configured.
+ *
+ * @returns {Buffer|null}
+ */
+function getEncryptionKey() {
+  return normalizeKey(process.env.SETTINGS_ENCRYPTION_KEY);
 }
 
 /**
@@ -54,13 +62,14 @@ function isEncrypted(value) {
  * not configured.
  *
  * @param {string} plaintext - The value to encrypt.
+ * @param {string} [keyOverride] - Optional key string to use instead of the env var.
  * @returns {string} The ciphertext (prefixed) or original value.
  */
-function encrypt(plaintext) {
+function encrypt(plaintext, keyOverride) {
   if (!plaintext || typeof plaintext !== 'string') return plaintext;
   if (isEncrypted(plaintext)) return plaintext; // already encrypted
 
-  const key = getEncryptionKey();
+  const key = keyOverride ? normalizeKey(keyOverride) : getEncryptionKey();
   if (!key) return plaintext; // passthrough when key not configured
 
   const iv = crypto.randomBytes(IV_LENGTH);
@@ -79,13 +88,14 @@ function encrypt(plaintext) {
  * is not configured.
  *
  * @param {string} ciphertext - The value to decrypt.
+ * @param {string} [keyOverride] - Optional key string to use instead of the env var.
  * @returns {string} The decrypted plaintext or original value.
  */
-function decrypt(ciphertext) {
+function decrypt(ciphertext, keyOverride) {
   if (!ciphertext || typeof ciphertext !== 'string') return ciphertext;
   if (!isEncrypted(ciphertext)) return ciphertext; // plaintext passthrough
 
-  const key = getEncryptionKey();
+  const key = keyOverride ? normalizeKey(keyOverride) : getEncryptionKey();
   if (!key) {
     console.warn('[ContextLens] Cannot decrypt: SETTINGS_ENCRYPTION_KEY not set.');
     return ciphertext; // can't decrypt without the key
@@ -111,4 +121,21 @@ function decrypt(ciphertext) {
   }
 }
 
-module.exports = { encrypt, decrypt, isEncrypted };
+/**
+ * Re-encrypts a stored ciphertext with a new key (key rotation).
+ * Decrypts with the currently configured key, then re-encrypts with
+ * `newKeyValue`. Returns the value unchanged if it was never encrypted
+ * or could not be decrypted.
+ *
+ * @param {string} value - The stored value (ciphertext or plaintext).
+ * @param {string} newKeyValue - New 32-byte key (64 hex or raw string).
+ * @returns {string} Re-encrypted ciphertext or original value.
+ */
+function rotateKey(value, newKeyValue) {
+  if (!isEncrypted(value)) return value;
+  const plaintext = decrypt(value);
+  if (plaintext === value) return value; // could not decrypt — leave as-is
+  return encrypt(plaintext, newKeyValue);
+}
+
+module.exports = { encrypt, decrypt, isEncrypted, rotateKey };

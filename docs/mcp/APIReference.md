@@ -39,6 +39,7 @@ Generates an AI summary, risk analysis, and checklist for the current uncommitte
 Searches past episodes and coding history semantically.
 * **Arguments**:
   * `query` (string, required): Search query.
+  * `mode` (string, optional, default: `text`): `text` (substring match) or `semantic` (vector similarity over indexed project vectors; requires prior indexing via `/api/search/index` and an enabled Gemini/OpenAI provider).
 * **Required Permissions**: `search`
 
 ### 7. `get_episode_details`

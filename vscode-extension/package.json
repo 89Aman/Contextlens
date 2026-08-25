@@ -1,6 +1,6 @@
 {
-  "name": "contextlens",
-  "displayName": "ContextLens",
+  "name": "contextlens-agent",
+  "displayName": "ContextLens - AI Context Tracker",
   "description": "AI-driven developer companion for capturing coding intent and context.",
   "version": "1.0.3",
   "publisher": "Noventra-Labs",
@@ -12,7 +12,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/89Aman/ContextLens"
+    "url": "https://github.com/Noventra-Labs/ContextLens"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -52,6 +52,10 @@
       {
         "command": "contextlens.closeEpisode",
         "title": "ContextLens: Close Episode"
+      },
+      {
+        "command": "contextlens.pauseCapture",
+        "title": "ContextLens: Pause / Resume Capture"
       },
       {
         "command": "contextlens.explainDiff",
@@ -180,7 +184,8 @@
     "test-watch": "tsc -watch -p ./",
     "pretest": "npm run test-compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./test/runTest.js"
+    "test": "mocha",
+    "test:unit": "mocha"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
@@ -193,11 +198,16 @@
     "glob": "^8.1.0",
     "mocha": "^11.3.0",
     "ts-loader": "^9.4.2",
+    "ts-node": "^10.9.2",
     "typescript": "^5.0.4",
     "webpack": "^5.81.0",
     "webpack-cli": "^5.0.2"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.5"
+    "serialize-javascript": "^7.0.5",
+    "brace-expansion@<2": "^1.1.18",
+    "brace-expansion@2": "^2.1.4",
+    "fast-uri": "^3.1.5",
+    "js-yaml@4": "^4.3.1"
   }
 }

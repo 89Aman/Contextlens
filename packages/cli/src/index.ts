@@ -16,14 +16,14 @@ const MCP_PORT = 3012;
 
 function printHelp() {
   console.log(`
-ContextLens CLI v${VERSION}
+ContextLens MCP CLI v${VERSION}
 
 Usage:
-  contextlens mcp install     - Install ContextLens MCP configuration for Claude and Cursor
-  contextlens mcp uninstall   - Remove ContextLens MCP configuration
-  contextlens mcp doctor      - Run health checks and diagnostics
-  contextlens mcp run         - Run the MCP bridge (JSON-RPC)
-  contextlens --help          - Show this help message
+  contextlens-mcp mcp install     - Install ContextLens MCP configuration for Claude and Cursor
+  contextlens-mcp mcp uninstall   - Remove ContextLens MCP configuration
+  contextlens-mcp mcp doctor      - Run health checks and diagnostics
+  contextlens-mcp mcp run         - Run the MCP bridge (JSON-RPC)
+  contextlens-mcp --help          - Show this help message
 `);
 }
 
@@ -100,7 +100,7 @@ function configureClaude(install: boolean): boolean {
 
     if (install) {
       config.mcpServers.contextlens = {
-        command: 'contextlens',
+        command: 'contextlens-mcp',
         args: ['mcp', 'run']
       };
       console.log(`[OK] Configured Claude Desktop at ${configPath}`);
@@ -148,7 +148,7 @@ function configureCursor(install: boolean): boolean {
       data['mcpServers']['contextlens'] = {
         name: 'contextlens',
         type: 'command',
-        command: 'contextlens mcp run',
+        command: 'contextlens-mcp mcp run',
         enabled: true
       };
       console.log(`[OK] Configured Cursor at ${cursorConfigPath}`);

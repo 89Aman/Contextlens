@@ -1,6 +1,7 @@
 require('dotenv').config();
 const Sentry = require('./sentry'); // Must be required before any other module
 const { onRequest } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { validateEnv } = require('./lib/envCheck');
 
 // Validate environment variables on boot
@@ -81,3 +82,20 @@ exports.aiService = Sentry.wrapHttpFunction(onRequest({
   const app = require('./apps/ai');
   return app(req, res);
 }));
+
+/**
+ * Retention Service: scheduled archival/deletion of old episodes and
+ * per-episode call pruning. Runs daily at 03:00 UTC by default
+ * (configurable via RETENTION_SCHEDULE cron expression).
+ */
+exports.retentionService = onSchedule({
+  schedule: process.env.RETENTION_SCHEDULE || '0 3 * * *',
+  region: 'us-central1',
+  memory: '512MiB',
+  timeoutSeconds: 540,
+  maxInstances: 1,
+}, async () => {
+  const { runRetention } = require('./services/retention');
+  const stats = await runRetention();
+  console.log(JSON.stringify({ severity: 'INFO', event: 'retention_run', stats }));
+});

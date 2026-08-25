@@ -32,8 +32,31 @@ npm test
 │   │   └── mcpServer.ts     # HTTP server for MCP
 │   ├── mcp-bridge.js        # stdio JSON-RPC bridge
 │   └── test/                # Test files
+├── contextlens-cli/         # User-facing backend CLI (bin: `contextlens`)
+├── packages/
+│   ├── mcp/                 # MCP bridge package (@contextlens/mcp)
+│   ├── cli/                 # MCP client config CLI (bin: `contextlens-mcp`)
+│   └── sdk/                 # Plugin SDK (@contextlens/sdk)
 └── README.md
 ```
+
+## Package & Binary Naming
+
+Two packages install an executable. They intentionally use **different binary
+names** so installing both globally does not overwrite each other:
+
+| Package | Binary | Purpose |
+|---------|--------|---------|
+| `@noventra-labs/contextlens-cli` | `contextlens` | Backend REST CLI: login, projects, episodes, search, AI |
+| `@contextlens/mcp-cli` | `contextlens-mcp` | MCP client config: `mcp install/uninstall/doctor/run` |
+
+Rules for contributors:
+
+- Never add a `bin` entry that collides with an existing binary name
+  (`contextlens` or `contextlens-mcp`). The CI bin-conflict check fails the build.
+- Refer to the MCP config CLI as `contextlens-mcp` in docs, help text, and
+  generated client configs (Claude Desktop / Cursor).
+- Refer to the user-facing CLI as `contextlens` in docs and examples.
 
 ## How to Contribute
 

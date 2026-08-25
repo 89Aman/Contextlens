@@ -126,6 +126,22 @@ const searchRules = [
   handleValidation,
 ];
 
+// POST /search/index — manual embedding generation for semantic search
+const indexSearchRules = [
+  isUUID('projectId'),
+  body('episodeId').optional().trim().matches(UUID_REGEX).withMessage('episodeId must be a valid UUID'),
+  body('force').optional().isBoolean().withMessage('force must be a boolean'),
+  handleValidation,
+];
+
+// POST /search/semantic — vector similarity search
+const semanticSearchRules = [
+  isUUID('projectId'),
+  isNonEmptyString('q', 500),
+  body('limit').optional().isInt({ min: 1, max: 50 }),
+  handleValidation,
+];
+
 const closeEpisodeRules = [
   isUUID('projectId'),
   isUUID('episodeId'),
@@ -174,6 +190,8 @@ module.exports = {
   explainRules,
   summarizeRules,
   searchRules,
+  indexSearchRules,
+  semanticSearchRules,
   closeEpisodeRules,
   getEpisodeRules,
   getEpisodeBodyRules,

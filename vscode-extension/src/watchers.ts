@@ -26,6 +26,20 @@ let watchersInitialized = false;
 const deduplicator = new EventDeduplicator();
 const notifier = NotificationService.getInstance();
 
+/** When paused, automatic capture (saves/commits/branch episodes) is suppressed. */
+let capturePaused = false;
+
+/** Toggle automatic capture on/off. Returns the new state. */
+export function setCapturePaused(paused: boolean): boolean {
+  capturePaused = paused;
+  return capturePaused;
+}
+
+/** Whether automatic capture is currently paused. */
+export function isCapturePaused(): boolean {
+  return capturePaused;
+}
+
 /** Maximum diff size sent to sync engine (ENH-002) */
 const MAX_DIFF_CHARS = 6000;
 
@@ -89,6 +103,9 @@ function watchBranch(gitDir: string, workspaceRoot: string, deps: WatcherDeps): 
 
         lastBranches[workspaceRoot] = branch;
 
+        // Pause capture → track branch but do not auto-create/close episodes
+        if (capturePaused) return;
+
         // Close old episode silently (goes to sync queue)
         const episodeStore = deps.episodeStore;
         if (episodeStore.getActiveEpisode(workspaceRoot)) {
@@ -145,6 +162,9 @@ function watchCommits(gitDir: string, workspaceRoot: string, deps: WatcherDeps):
         if (!message || message === lastCommitMessages[workspaceRoot]) return;
         lastCommitMessages[workspaceRoot] = message;
 
+        // Pause capture → ignore commit events
+        if (capturePaused) return;
+
         const episodeStore = deps.episodeStore;
         const episode = episodeStore.getActiveEpisode(workspaceRoot);
         if (!episodeStore.getProjectId(workspaceRoot) || !episode) return;
@@ -195,6 +215,9 @@ function watchFileSaves(deps: WatcherDeps): void {
   deps.context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(async (doc) => {
       try {
+        // Pause capture → ignore file saves
+        if (capturePaused) return;
+
         const folder = vscode.workspace.getWorkspaceFolder(doc.uri);
         if (!folder) return;
         const workspaceRoot = folder.uri.fsPath;
@@ -266,6 +289,9 @@ export async function autoInitEpisode(deps: WatcherDeps, workspaceRoot?: string)
     const episodeStore = deps.episodeStore;
     const root = workspaceRoot || episodeStore.getActiveWorkspaceRoot();
     if (!root) return;
+
+    // Pause capture → do not auto-create episodes
+    if (capturePaused) return;
 
     if (episodeStore.getActiveEpisode(root)) {
       lastBranches[root] = episodeStore.getActiveEpisode(root)?.branchName || null;

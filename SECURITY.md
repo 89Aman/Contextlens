@@ -52,3 +52,9 @@ This security policy covers:
 Out of scope:
 - Third-party AI client configurations
 - User's own AI provider API keys
+
+## Dependency Audit Status
+
+`npm audit` is enforced in CI (`--audit-level=high`). All packages currently report **0 high / 0 critical** vulnerabilities (verified 2026-08-14).
+
+Accepted moderate risk (backend): the `@google-cloud/storage` optional dependency chain (`gaxios@6.7.1`, `retry-request@7.0.2`, `teeny-request@9.0.0`, `uuid@9.0.1`) carries 7 moderate advisories with no in-range fixes (fixes require a breaking major of `firebase-admin`). The backend is **Firestore-only** and never instantiates `admin.storage()`, so this code path is never executed. Revisit when `firebase-admin` majors resolve the chain.

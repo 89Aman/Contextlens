@@ -1,18 +1,25 @@
 # Example: Semantic Search
 
-Search your past coding sessions for relevant context.
+Search your past coding sessions for relevant context. Two modes are available
+through the `search_context` tool:
+
+- **text** (default): substring match over episodes and calls.
+- **semantic**: vector similarity over embedded prompts/responses. Requires the
+  project to be indexed first (see below).
 
 ## Usage
 
-### Search Past Episodes
+### Search Past Episodes (text mode)
 
 Ask your AI client:
+
 ```
 Search my past work for anything related to "database migration" 
 using search_context
 ```
 
 Tool call:
+
 ```json
 {
   "name": "search_context",
@@ -21,6 +28,43 @@ Tool call:
   }
 }
 ```
+
+### Index a project for semantic search
+
+Semantic search needs embeddings. Indexing is a manual trigger (AI cost is
+user-controlled). From the dashboard or any authenticated client:
+
+```bash
+curl -X POST $API/api/search/index \
+  -H "Authorization: Bearer $ID_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "projectId": "<projectId>" }'
+```
+
+Re-index a single episode: `{ "projectId": "<id>", "episodeId": "<id>", "force": true }`.
+
+### Semantic search
+
+Ask your AI client:
+
+```
+Use search_context with mode semantic to find work related to "ORM schema design"
+```
+
+Tool call:
+
+```json
+{
+  "name": "search_context",
+  "arguments": {
+    "query": "ORM schema design",
+    "mode": "semantic"
+  }
+}
+```
+
+Semantic results include a relevance `score`; low scores (`< 0.3`) are filtered
+out.
 
 ### Expected Output
 

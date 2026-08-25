@@ -104,26 +104,53 @@ Use **ContextLens: Copy MCP Configuration** to get the correct path.
 
 ## 🚀 Quick Start
 
+The canonical ContextLens flow is: install → sign in → start an episode → code
+with your AI → close the episode → review context.
+
 ### 1. Start an Episode
 
 Ask your AI client:
 > "Use the start_episode tool to begin tracking my work on the login feature"
 
+Or run the **ContextLens: New Episode** command in VS Code. Episodes are also
+auto-created when you switch branches.
+
 ### 2. Code as Usual
 
-ContextLens automatically captures:
-- Git diffs
-- AI interactions
-- File changes
+ContextLens **automatically** captures:
+
+- Git diffs (redacted, truncated to 6000 chars)
+- Git commit messages
+- File changes (workspace-relative paths)
+- Branch switches (closing/opening episodes)
 
 ### 3. Get Context
 
 Ask your AI client:
 > "What changes have I made in this episode? Use explain_diff to analyze them."
 
+AI actions — `explain_diff`, `explain_past_changes`, `summarize_branch`,
+`search_context` — are **manual triggers only**. ContextLens never invokes an
+AI model automatically, so you control AI cost.
+
 ### 4. Search Past Work
 
 > "Search my past episodes for anything related to authentication using search_context"
+
+### Automatic vs. manual capture
+
+| Captured automatically | Manual (AI-triggered) actions |
+|---|---|
+| Diffs, commits, file saves, branch switches | `log_ai_call`, `explain_diff`, `explain_past_changes`, `search_context` |
+| Paused with **ContextLens: Pause / Resume Capture** | Always opt-in via your AI client |
+
+### Where your data lives
+
+- **Local only:** diffs and AI prompts are redacted *before* they leave the
+  machine; the offline sync queue (`cl_queue.json`) is local to VS Code.
+- **Uploaded (after sign-in):** redacted episode metadata, diff summaries, and
+  AI prompt/response text are synced to your authenticated Firebase project.
+  See [Privacy](docs/PRIVACY.md).
 
 ## 🏗️ Architecture
 
@@ -166,6 +193,8 @@ Ask your AI client:
 | [Security](docs/mcp/Security.md) | Authentication, rate limiting, error codes |
 | [Examples](docs/mcp/Examples.md) | Client configuration examples |
 | [API Reference](docs/mcp/APIReference.md) | Tools, resources, prompts reference |
+| [Data Model](docs/data-model.md) | Episode lifecycle, fields, sync & edge cases |
+| [Privacy Policy](docs/PRIVACY.md) | How ContextLens handles codebase data and secrets |
 | [Troubleshooting](docs/mcp/Troubleshooting.md) | Common issues and solutions |
 | [FAQ](docs/mcp/FAQ.md) | Frequently asked questions |
 

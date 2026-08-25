@@ -4,6 +4,10 @@ import { AlertCircle, RefreshCcw, Home } from 'lucide-react'
 interface Props {
   children: ReactNode
   fallback?: ReactNode
+  /** Override the default page-reload action (defaults to window.location.reload). */
+  onReload?: () => void
+  /** Override the default go-home action (defaults to navigating to '/'). */
+  onGoHome?: () => void
 }
 
 interface State {
@@ -45,7 +49,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
             <div className="flex flex-col gap-3">
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => (this.props.onReload ? this.props.onReload() : window.location.reload())}
                 className="flex items-center justify-center gap-2 w-full bg-primary hover:bg-primaryHover text-black font-semibold py-3 px-4 rounded-xl transition-all"
               >
                 <RefreshCcw className="w-4 h-4" />
@@ -54,7 +58,8 @@ export class ErrorBoundary extends Component<Props, State> {
               <button
                 onClick={() => {
                   this.setState({ hasError: false, error: null })
-                  window.location.href = '/'
+                  if (this.props.onGoHome) this.props.onGoHome()
+                  else window.location.href = '/'
                 }}
                 className="flex items-center justify-center gap-2 w-full bg-card border border-cardBorder hover:border-primary/50 text-textPrimary font-semibold py-3 px-4 rounded-xl transition-all"
               >

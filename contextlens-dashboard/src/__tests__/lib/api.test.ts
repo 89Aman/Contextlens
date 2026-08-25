@@ -150,17 +150,10 @@ describe('API Utilities', () => {
           json: jest.fn().mockResolvedValueOnce(mockResponse),
         });
 
-      jest.useFakeTimers();
-
-      const promise = search('project123', 'query');
-      jest.advanceTimersByTime(2000);
-
-      const result = await promise;
+      const result = await search('project123', 'query');
       expect(result).toEqual(mockResponse);
       expect(fetchMock).toHaveBeenCalledTimes(2);
-
-      jest.useRealTimers();
-    });
+    }, 15000);
   });
 
   describe('Error handling', () => {
@@ -180,17 +173,19 @@ describe('API Utilities', () => {
     });
 
     it('should provide friendly error messages', async () => {
-      fetchMock.mockResolvedValueOnce({
+      // All attempts return 503 so retries exhaust and the friendly message surfaces
+      fetchMock.mockResolvedValue({
         status: 503,
         ok: false,
       });
 
       try {
         await explainDiff('project123', 'episode456');
+        throw new Error('Expected explainDiff to throw');
       } catch (error: any) {
         expect(error.message).toContain('temporarily unavailable');
       }
-    });
+    }, 15000);
 
     it('should handle unauthenticated users', async () => {
       (auth.currentUser as any).getIdToken.mockRejectedValueOnce(new Error('No user'));

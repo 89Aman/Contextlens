@@ -8,6 +8,7 @@ import { ToolRegistry, McpToolDefinition } from '../registry/ToolRegistry';
 import { McpPermission } from '../permissions';
 import { EpisodeStore } from '../../episodeStore';
 import { getAuthManager } from '../../auth';
+import { isCapturePaused } from '../../watchers';
 
 const statusTool: McpToolDefinition = {
   name: 'get_status',
@@ -26,6 +27,7 @@ const statusTool: McpToolDefinition = {
 
     const lines = [
       `VS Code Connection: ✅ Online`,
+      `Capture: ${isCapturePaused() ? '⏸ Paused' : '▶ Active'}`,
       `Project ID: ${store.getProjectId() || '❌ Not configured in VS Code'}`,
       `Project Name: ${store.getProjectName() || 'N/A'}`,
       `Active Episode ID: ${store.getActiveEpisode()?.id || '❌ None active'}`,

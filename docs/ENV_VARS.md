@@ -24,6 +24,12 @@
 | `SETTINGS_ENCRYPTION_KEY` | _(none)_ | AES-256 key for encrypting API keys at rest. 64 hex chars (32 bytes). |
 | `SENTRY_DSN` | _(none)_ | Sentry error tracking DSN. |
 | `NODE_ENV` | _(none)_ | Set to `production` for structured logs and no stack traces. |
+| `EMBEDDINGS_MODEL` | `text-embedding-004` | Gemini embeddings model for semantic search. |
+| `SEMANTIC_SCORE_THRESHOLD` | `0.3` | Minimum cosine similarity for semantic search results. |
+| `RETENTION_SCHEDULE` | `0 3 * * *` | Cron expression for the retention/archival job (03:00 UTC daily). |
+| `RETENTION_ARCHIVE_AFTER_DAYS` | `365` | Close episodes older than this many days get `archived`. |
+| `RETENTION_DELETE_AFTER_DAYS` | `730` | Archived episodes older than this get deleted. |
+| `RETENTION_MAX_CALLS_PER_EPISODE` | `1000` | Prune oldest calls beyond this per-episode cap. |
 
 ## Generating an Encryption Key
 

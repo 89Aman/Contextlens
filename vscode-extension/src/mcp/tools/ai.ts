@@ -8,6 +8,7 @@ import { ToolRegistry, McpToolDefinition } from '../registry/ToolRegistry';
 import { McpPermission } from '../permissions';
 import { EpisodeStore } from '../../episodeStore';
 import { GitContext } from '../../gitContext';
+import { Redaction } from '../../redaction';
 import { createHash } from 'crypto';
 
 const logAiCall: McpToolDefinition = {
@@ -33,15 +34,15 @@ const logAiCall: McpToolDefinition = {
 
     const gitCtx = await GitContext.getContext();
     const payload = {
-      promptText: args.prompt,
-      modelResponse: args.response || '',
+      promptText: Redaction.redact(args.prompt),
+      modelResponse: Redaction.redact(args.response || ''),
       source: 'mcp',
       modelName: args.modelName || 'agent',
       intentTag: args.intent || 'developer-assistant',
       branchName: gitCtx.branch || 'main',
       activeFilePath: '',
       relatedFiles: [],
-      diffSnapshot: gitCtx.diff || null,
+      diffSnapshot: gitCtx.diff ? Redaction.redact(gitCtx.diff) : null,
       diffHash: gitCtx.diff ? createHash('md5').update(gitCtx.diff).digest('hex') : null,
     };
 

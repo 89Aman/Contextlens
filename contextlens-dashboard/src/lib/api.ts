@@ -1,7 +1,7 @@
 import { auth } from './firebase'
 import type { ExplainDiffResult, BranchSummaryResult } from '../types'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+const BASE_URL = (globalThis as any).__CONTEXTLENS_API_BASE_URL__ || ''
 const REQUEST_TIMEOUT_MS = 30_000
 const MAX_RETRIES = 2
 

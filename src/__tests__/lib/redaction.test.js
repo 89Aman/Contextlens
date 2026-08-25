@@ -77,6 +77,70 @@ describe('Redaction Utilities', () => {
       const redactedCount = (result.match(/\[REDACTED\]/g) || []).length;
       expect(redactedCount).toBe(2);
     });
+
+    it('should redact JWTs', () => {
+      const input = 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+      const result = redactText(input);
+      expect(result).toContain('[REDACTED]');
+      expect(result).not.toMatch(/eyJ/);
+    });
+
+    it('should redact Firebase ID tokens (JWTs)', () => {
+      const input = 'idToken=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJhYmMifQ.signatureparthere';
+      const result = redactText(input);
+      expect(result).toContain('[REDACTED]');
+      expect(result).not.toContain('signatureparthere');
+    });
+
+    it('should redact database connection strings', () => {
+      const inputs = [
+        'postgres://user:supersecret@db.example.com:5432/prod',
+        'postgresql://admin:hunter2pass@localhost/mydb',
+        'mongodb+srv://user:mongopass@cluster0.mongodb.net/app',
+        'mysql://root:rootpass@127.0.0.1:3306/db',
+        'redis://:redissecret@cache:6379/0',
+      ];
+      inputs.forEach(input => {
+        const result = redactText(input);
+        expect(result).toContain('[REDACTED]');
+      });
+    });
+
+    it('should redact .env assignments for known secret keys', () => {
+      const inputs = [
+        'DATABASE_URL=postgres://user:pass@host:5432/db',
+        'MONGO_URI=mongodb://user:pass@host/db',
+        'REDIS_URL=redis://:pass@host:6379',
+        'GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json',
+      ];
+      inputs.forEach(input => {
+        const result = redactText(input);
+        expect(result).toContain('[REDACTED]');
+      });
+    });
+
+    it('should not redact ordinary hashes (false positives)', () => {
+      const inputs = [
+        'sha256=9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+        'md5=d41d8cd98f00b204e9800998ecf8427e',
+        'commit=1797e51f0b2f9b2c4d5e6f7a8b9c0d1e2f3a4b5c6',
+      ];
+      inputs.forEach(input => {
+        expect(redactText(input)).toBe(input);
+      });
+    });
+
+    it('should not redact UUIDs or ordinary IDs', () => {
+      const inputs = [
+        'id=550e8400-e29b-41d4-a716-446655440000',
+        'episodeId=123e4567-e89b-12d3-a456-426614174000',
+        'count=42',
+        'name=JohnDoe',
+      ];
+      inputs.forEach(input => {
+        expect(redactText(input)).toBe(input);
+      });
+    });
   });
 
   describe('redactDeep', () => {

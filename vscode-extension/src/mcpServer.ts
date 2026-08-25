@@ -1,23 +1,24 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { EpisodeStore } from './episodeStore';
 import { getAuthManager } from './auth';
 import { ApiClient } from './apiClient';
 import { GitContext } from './gitContext';
-import { createHash, randomBytes } from 'crypto';
+import { Redaction } from './redaction';
 import { ToolRegistry } from './mcp/registry/ToolRegistry';
-import { McpPermission } from './mcp/permissions';
 import { TokenManager } from './mcp/auth/tokenManager';
 import { ClientIdentityTracker } from './mcp/auth/clientIdentity';
 import { RateLimiter } from './mcp/security/rateLimiter';
-import { validateInput, McpErrorCode } from './mcp/security/validator';
+import { createMcpRequestHandler } from './mcp/serverHandler';
 import { listResources, readResource } from './mcp/resources/index';
 import { listPrompts, getPrompt } from './mcp/prompts/index';
-import { NotificationManager, McpNotificationType } from './mcp/notifications/notificationManager';
+import { NotificationManager } from './mcp/notifications/notificationManager';
 import { SessionManager } from './mcp/session/sessionManager';
 import { runHealthCheck } from './mcp/health/healthCheck';
 import { getErrorCatalog } from './mcp/errors/mcpErrors';
+import { MetricsCollector } from './mcp/observability/metrics';
 
 // Import all tools — side-effect registers them into the registry
 import './mcp/tools/index';
@@ -46,6 +47,137 @@ function writeSecretFile(token: string): void {
   }
 }
 
+/**
+ * Legacy endpoints (pre-registry bridge versions).
+ * Returns { status, body }; the shared handler serializes the response.
+ */
+async function handleLegacy(
+  req: http.IncomingMessage,
+  url: URL,
+  body: any,
+  requestId: string
+): Promise<{ status: number; body: any }> {
+  const pathname = url.pathname;
+
+  if (req.method === 'GET' && pathname === '/status') {
+    const store = EpisodeStore.get();
+    const authManager = getAuthManager();
+    const isAuthenticated = authManager ? !!(await authManager.getIdToken()) : false;
+
+    return {
+      status: 200,
+      body: {
+        projectId: store.getProjectId(),
+        episodeId: store.getActiveEpisode()?.id || null,
+        projectName: store.getProjectName(),
+        activeEpisodeName: store.getActiveEpisode()?.name || null,
+        authenticated: isAuthenticated,
+      },
+    };
+  }
+
+  if (req.method === 'POST' && pathname === '/start-episode') {
+    const name = body?.name || `MCP Session ${new Date().toISOString().slice(0, 10)}`;
+    await EpisodeStore.get().createEpisode(name);
+    return { status: 200, body: { ok: true, episode: EpisodeStore.get().getActiveEpisode() } };
+  }
+
+  if (req.method === 'POST' && pathname === '/close-episode') {
+    await EpisodeStore.get().closeEpisode();
+    return { status: 200, body: { ok: true } };
+  }
+
+  if (req.method === 'POST' && pathname === '/log-call') {
+    if (!body?.promptText) {
+      return { status: 400, body: { error: 'promptText is required', requestId } };
+    }
+
+    const gitCtx = await GitContext.getContext();
+    const payload = {
+      promptText: Redaction.redact(body.promptText),
+      modelResponse: Redaction.redact(body.modelResponse || ''),
+      source: body.source || 'chat',
+      modelName: body.modelName || 'agent',
+      intentTag: body.intentTag || 'developer-assistant',
+      branchName: gitCtx.branch || 'main',
+      activeFilePath: body.activeFilePath || '',
+      relatedFiles: body.relatedFiles || [],
+      diffSnapshot: gitCtx.diff ? Redaction.redact(gitCtx.diff) : null,
+      diffHash: gitCtx.diff ? createHash('md5').update(gitCtx.diff).digest('hex') : null,
+    };
+
+    EpisodeStore.get().enqueueCall(payload);
+    return { status: 200, body: { ok: true } };
+  }
+
+  if (req.method === 'POST' && pathname === '/explain-diff') {
+    const store = EpisodeStore.get();
+    const episode = store.getActiveEpisode();
+    const projectId = store.getProjectId();
+
+    if (!episode || !projectId) {
+      return { status: 400, body: { error: 'No active episode or project', requestId } };
+    }
+
+    const gitCtx = await GitContext.getContext();
+    if (!gitCtx.diff) {
+      return { status: 200, body: { summary: 'No changes to explain.' } };
+    }
+
+    const diffHash = createHash('md5').update(gitCtx.diff).digest('hex');
+    const result = await ApiClient.explainDiff({
+      projectId,
+      episodeId: episode.id,
+      diffHash,
+      changedFiles: episode.changedFiles,
+    });
+
+    return { status: 200, body: result };
+  }
+
+  if (req.method === 'POST' && pathname === '/search') {
+    const store = EpisodeStore.get();
+    const projectId = store.getProjectId();
+    if (!projectId) {
+      return { status: 400, body: { error: 'No active project', requestId } };
+    }
+    const result = await ApiClient.post('/search', { projectId, q: body?.q || '' });
+    return { status: 200, body: result };
+  }
+
+  if (req.method === 'POST' && pathname === '/get-episode') {
+    const store = EpisodeStore.get();
+    const projectId = store.getProjectId();
+    if (!projectId || !body?.episodeId) {
+      return { status: 400, body: { error: 'projectId and episodeId are required', requestId } };
+    }
+    const result = await ApiClient.post('/episodes/get', { projectId, episodeId: body.episodeId });
+    return { status: 200, body: result };
+  }
+
+  if (req.method === 'POST' && pathname === '/list-episodes') {
+    const store = EpisodeStore.get();
+    const projectId = store.getProjectId();
+    if (!projectId) {
+      return { status: 400, body: { error: 'No active project', requestId } };
+    }
+    const result = await ApiClient.post('/episodes/list', { projectId, limit: body?.limit });
+    return { status: 200, body: result };
+  }
+
+  if (req.method === 'POST' && pathname === '/explain-past-changes') {
+    const store = EpisodeStore.get();
+    const projectId = store.getProjectId();
+    if (!projectId || !body?.episodeId) {
+      return { status: 400, body: { error: 'projectId and episodeId are required', requestId } };
+    }
+    const result = await ApiClient.post('/episodes/explain', { projectId, episodeId: body.episodeId });
+    return { status: 200, body: result };
+  }
+
+  return { status: 404, body: { error: 'Not Found', requestId } };
+}
+
 export function startMcpServer() {
   if (server) return;
 
@@ -60,361 +192,39 @@ export function startMcpServer() {
 
   const registry = ToolRegistry.getInstance();
 
-  server = http.createServer(async (req, res) => {
-    // Enable JSON responses
-    res.setHeader('Content-Type', 'application/json');
-
-    // CORS headers for safety
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-MCP-Secret, X-MCP-Client');
-
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204);
-      res.end();
-      return;
-    }
-
-    // Validate rotating token on every request
-    const requestSecret = req.headers['x-mcp-secret'] as string;
-    if (!tokenManager.validate(requestSecret)) {
-      res.writeHead(401);
-      res.end(JSON.stringify({
-        error: 'Unauthorized — invalid or missing MCP secret',
-        code: McpErrorCode.UNAUTHORIZED
-      }));
-      return;
-    }
-
-    // Track client identity
-    const { clientId, version } = clientTracker.parseFromHeaders(req.headers as Record<string, string | string[] | undefined>);
-    clientTracker.recordConnection(clientId, version);
-
-    // Rate limiting
-    const rateResult = rateLimiter.checkLimit(clientId);
-    res.setHeader('X-RateLimit-Remaining', String(rateResult.remaining));
-    res.setHeader('X-RateLimit-Limit', String(rateResult.limit));
-    if (!rateResult.allowed) {
-      res.writeHead(429);
-      res.setHeader('Retry-After', String(Math.ceil((rateResult.retryAfterMs || 1000) / 1000)));
-      res.end(JSON.stringify({
-        error: 'Rate limit exceeded',
-        code: McpErrorCode.RATE_LIMITED,
-        retryAfterMs: rateResult.retryAfterMs
-      }));
-      return;
-    }
-
-    const url = new URL(req.url || '', `http://${req.headers.host}`);
-
-    try {
-      // ── Registry-powered tool dispatch ──────────────────────────────────────────
-
-      if (req.method === 'POST' && url.pathname === '/mcp/tools/list') {
-        const tools = registry.listTools();
-        res.writeHead(200);
-        res.end(JSON.stringify({ tools }));
-        return;
-      }
-
-      // ── Resources ──────────────────────────────────────────────────────────
-
-      if (req.method === 'POST' && url.pathname === '/mcp/resources/list') {
-        const resources = listResources();
-        res.writeHead(200);
-        res.end(JSON.stringify({ resources }));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/mcp/resources/read') {
-        const body = await getBody(req);
-        const result = await readResource(body.uri);
-        if (!result) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ error: `Resource not found: ${body.uri}` }));
-          return;
-        }
-        res.writeHead(200);
-        res.end(JSON.stringify({ contents: [result] }));
-        return;
-      }
-
-      // ── Prompts ────────────────────────────────────────────────────────────
-
-      if (req.method === 'POST' && url.pathname === '/mcp/prompts/list') {
-        const prompts = listPrompts();
-        res.writeHead(200);
-        res.end(JSON.stringify({ prompts }));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/mcp/prompts/get') {
-        const body = await getBody(req);
-        const messages = getPrompt(body.name, body.arguments || {});
-        if (!messages) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ error: `Prompt not found: ${body.name}` }));
-          return;
-        }
-        res.writeHead(200);
-        res.end(JSON.stringify({ description: body.name, messages }));
-        return;
-      }
-
-      // ── Notifications ───────────────────────────────────────────────────────
-
-      if (req.method === 'POST' && url.pathname === '/mcp/notifications/recent') {
-        const body = await getBody(req);
-        const notifMgr = NotificationManager.getInstance();
-        const notifications = notifMgr.getRecent(body.since, body.limit);
-        res.writeHead(200);
-        res.end(JSON.stringify({ notifications }));
-        return;
-      }
-
-      // ── Session ────────────────────────────────────────────────────────────
-
-      if (req.method === 'GET' && url.pathname === '/mcp/session') {
+  const handler = createMcpRequestHandler({
+    tokenManager,
+    clientTracker,
+    rateLimiter,
+    registry,
+    onToolCall: (info) => {
+      const metrics = MetricsCollector.getInstance();
+      metrics.recordCall(info.tool, info.client, info.durationMs, info.success);
+    },
+    services: {
+      listResources,
+      readResource,
+      listPrompts,
+      getPrompt,
+      getNotifications: (since?: number, limit?: number) =>
+        NotificationManager.getInstance().getRecent(since, limit),
+      getSessionState: () => {
         const store = EpisodeStore.get();
-        const sessionMgr = SessionManager.getInstance();
-        const state = sessionMgr.getState(
+        return SessionManager.getInstance().getState(
           null, // workspace
           store.getProjectId(),
           store.getActiveEpisode()?.id
         );
-        res.writeHead(200);
-        res.end(JSON.stringify(state));
-        return;
-      }
+      },
+      runHealthCheck,
+      getErrorCatalog,
+      getMetricsSummary: () => MetricsCollector.getInstance().getSummary(),
+      handleLegacy,
+    },
+  });
 
-      // ── Health Check ────────────────────────────────────────────────────────
-
-      if (req.method === 'GET' && url.pathname === '/mcp/health') {
-        const report = await runHealthCheck();
-        res.writeHead(report.overall === 'unhealthy' ? 503 : 200);
-        res.end(JSON.stringify(report));
-        return;
-      }
-
-      // ── Error Catalog ───────────────────────────────────────────────────────
-
-      if (req.method === 'GET' && url.pathname === '/mcp/errors') {
-        res.writeHead(200);
-        res.end(JSON.stringify({ errors: getErrorCatalog() }));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/mcp/tools/call') {
-        const body = await getBody(req);
-        const { name, arguments: args } = body;
-
-        // Per-tool rate limiting for expensive ops
-        const toolRateResult = rateLimiter.checkLimit(clientId, name);
-        if (!toolRateResult.allowed) {
-          res.writeHead(429);
-          res.end(JSON.stringify({
-            error: `Rate limit exceeded for tool '${name}'`,
-            code: McpErrorCode.RATE_LIMITED,
-            retryAfterMs: toolRateResult.retryAfterMs
-          }));
-          return;
-        }
-
-        // Input validation against tool schema
-        const tool = registry.get(name);
-        if (tool) {
-          const validation = validateInput(args || {}, tool.inputSchema);
-          if (!validation.valid) {
-            res.writeHead(400);
-            res.end(JSON.stringify({
-              error: `Validation error: ${validation.errors.join('; ')}`,
-              code: McpErrorCode.VALIDATION_ERROR
-            }));
-            return;
-          }
-        }
-
-        const result = await registry.callTool(name, args || {}, {
-          clientId,
-          grantedPermissions: Object.values(McpPermission),
-        });
-        res.writeHead(200);
-        res.end(JSON.stringify(result));
-        return;
-      }
-
-      // ── Legacy endpoints (backward compatibility) ───────────────────────
-      // These remain so existing bridge versions continue working.
-
-      if (req.method === 'GET' && url.pathname === '/status') {
-        const store = EpisodeStore.get();
-        const authManager = getAuthManager();
-        const isAuthenticated = authManager ? !!(await authManager.getIdToken()) : false;
-
-        res.writeHead(200);
-        res.end(JSON.stringify({
-          projectId: store.getProjectId(),
-          episodeId: store.getActiveEpisode()?.id || null,
-          projectName: store.getProjectName(),
-          activeEpisodeName: store.getActiveEpisode()?.name || null,
-          authenticated: isAuthenticated
-        }));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/start-episode') {
-        const body = await getBody(req);
-        const name = body.name || `MCP Session ${new Date().toISOString().slice(0, 10)}`;
-        await EpisodeStore.get().createEpisode(name);
-        res.writeHead(200);
-        res.end(JSON.stringify({ ok: true, episode: EpisodeStore.get().getActiveEpisode() }));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/close-episode') {
-        await EpisodeStore.get().closeEpisode();
-        res.writeHead(200);
-        res.end(JSON.stringify({ ok: true }));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/log-call') {
-        const body = await getBody(req);
-        if (!body.promptText) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ error: 'promptText is required' }));
-          return;
-        }
-
-        const gitCtx = await GitContext.getContext();
-        const payload = {
-          promptText: body.promptText,
-          modelResponse: body.modelResponse || '',
-          source: body.source || 'chat',
-          modelName: body.modelName || 'agent',
-          intentTag: body.intentTag || 'developer-assistant',
-          branchName: gitCtx.branch || 'main',
-          activeFilePath: body.activeFilePath || '',
-          relatedFiles: body.relatedFiles || [],
-          diffSnapshot: gitCtx.diff || null,
-          diffHash: gitCtx.diff ? createHash('md5').update(gitCtx.diff).digest('hex') : null
-        };
-
-        EpisodeStore.get().enqueueCall(payload);
-        res.writeHead(200);
-        res.end(JSON.stringify({ ok: true }));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/explain-diff') {
-        const store = EpisodeStore.get();
-        const episode = store.getActiveEpisode();
-        const projectId = store.getProjectId();
-
-        if (!episode || !projectId) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ error: 'No active episode or project' }));
-          return;
-        }
-
-        const gitCtx = await GitContext.getContext();
-        if (!gitCtx.diff) {
-          res.writeHead(200);
-          res.end(JSON.stringify({ summary: 'No changes to explain.' }));
-          return;
-        }
-
-        const diffHash = createHash('md5').update(gitCtx.diff).digest('hex');
-        const result = await ApiClient.explainDiff({
-          projectId,
-          episodeId: episode.id,
-          diffHash,
-          changedFiles: episode.changedFiles
-        });
-
-        res.writeHead(200);
-        res.end(JSON.stringify(result));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/search') {
-        const body = await getBody(req);
-        const store = EpisodeStore.get();
-        const projectId = store.getProjectId();
-        if (!projectId) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ error: 'No active project' }));
-          return;
-        }
-        const result = await ApiClient.post('/search', {
-          projectId,
-          q: body.q || ''
-        });
-        res.writeHead(200);
-        res.end(JSON.stringify(result));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/get-episode') {
-        const body = await getBody(req);
-        const store = EpisodeStore.get();
-        const projectId = store.getProjectId();
-        if (!projectId || !body.episodeId) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ error: 'projectId and episodeId are required' }));
-          return;
-        }
-        const result = await ApiClient.post('/episodes/get', {
-          projectId,
-          episodeId: body.episodeId
-        });
-        res.writeHead(200);
-        res.end(JSON.stringify(result));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/list-episodes') {
-        const body = await getBody(req);
-        const store = EpisodeStore.get();
-        const projectId = store.getProjectId();
-        if (!projectId) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ error: 'No active project' }));
-          return;
-        }
-        const result = await ApiClient.post('/episodes/list', {
-          projectId,
-          limit: body.limit
-        });
-        res.writeHead(200);
-        res.end(JSON.stringify(result));
-        return;
-      }
-
-      if (req.method === 'POST' && url.pathname === '/explain-past-changes') {
-        const body = await getBody(req);
-        const store = EpisodeStore.get();
-        const projectId = store.getProjectId();
-        if (!projectId || !body.episodeId) {
-          res.writeHead(400);
-          res.end(JSON.stringify({ error: 'projectId and episodeId are required' }));
-          return;
-        }
-        const result = await ApiClient.post('/episodes/explain', {
-          projectId,
-          episodeId: body.episodeId
-        });
-        res.writeHead(200);
-        res.end(JSON.stringify(result));
-        return;
-      }
-
-      res.writeHead(404);
-      res.end(JSON.stringify({ error: 'Not Found' }));
-    } catch (err: any) {
-      res.writeHead(500);
-      res.end(JSON.stringify({ error: err.message }));
-    }
+  server = http.createServer((req, res) => {
+    handler(req, res);
   });
 
   server.listen(PORT, '127.0.0.1', () => {
@@ -442,18 +252,4 @@ export function stopMcpServer() {
   } catch (err: any) {
     console.error('[ContextLens] Failed to delete MCP secret file:', err);
   }
-}
-
-function getBody(req: http.IncomingMessage): Promise<any> {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        resolve(body ? JSON.parse(body) : {});
-      } catch (err) {
-        reject(err);
-      }
-    });
-  });
 }

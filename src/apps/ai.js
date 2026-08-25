@@ -2,6 +2,7 @@ const { createBaseApp, registerErrorHandler } = require('../lib/baseApp');
 const { db, admin } = require('../firebase');
 const { randomUUID } = require('crypto');
 const { callGemini } = require('../services/ai');
+const { embedText, rankBySimilarity } = require('../lib/embeddings');
 const { explainDiffTemplate, branchSummaryTemplate } = require('../prompts');
 const { ErrorCodes, typedError } = require('../lib/errors');
 const { redactText, redactDeep } = require('../lib/redaction');
@@ -12,6 +13,8 @@ const {
   logCallRules,
   explainRules,
   summarizeRules,
+  indexSearchRules,
+  semanticSearchRules,
 } = require('../middleware/validate');
 const {
   verifyProjectOwnership,
@@ -24,6 +27,42 @@ const {
 } = require('../lib/apiHelpers');
 
 const app = createBaseApp();
+
+/**
+ * Run `fn` over `items` with at most `limit` tasks in flight.
+ * Resolves in input order; per-item errors must be handled by `fn`.
+ */
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
+/**
+ * Resolve the embedding provider for semantic search, or short-circuit with a
+ * canonical CONFIG_ERROR (500) when AI is not configured or the provider has
+ * no embeddings API. Returns null after sending a response.
+ */
+async function getEmbeddingProvider(uid, req, res) {
+  const { provider, customApiKey, configuredProvider } = await getProviderConfig(uid, null);
+  if (configuredProvider === 'none') {
+    res.status(500).json(typedError(ErrorCodes.CONFIG_ERROR, 'No AI provider configured. Configure Gemini or OpenAI for semantic search.', { requestId: req.id }));
+    return null;
+  }
+  if (provider === 'anthropic') {
+    res.status(500).json(typedError(ErrorCodes.CONFIG_ERROR, 'Anthropic has no embeddings API. Configure Gemini or OpenAI for semantic search.', { requestId: req.id }));
+    return null;
+  }
+  return { provider, customApiKey };
+}
 
 // AI routes require authentication
 app.use(requireAuth);
@@ -114,6 +153,7 @@ app.post('/calls/log', logCallRules, async (req, res) => {
 app.post('/episodes/explain', explainRules, async (req, res) => {
   const { uid } = req.user;
   const { projectId, episodeId, diffHash, changedFiles, customApiKey, diffText } = req.body;
+  const started = Date.now();
   
   try {
     const epRef = await verifyEpisodeOwnership(uid, projectId, episodeId, req, res);
@@ -131,7 +171,10 @@ app.post('/episodes/explain', explainRules, async (req, res) => {
 
     const cacheRef = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes').doc(episodeId).collection('cache').doc(finalDiffHash);
     const cached = await cacheRef.get();
-    if (cached.exists) return res.json({ ok: true, fromCache: true, ...cached.data().result });
+    if (cached.exists) {
+      auditLog('DATA_ACCESS', { action: 'explain_episode', projectId, episodeId, diffHash: finalDiffHash, fromCache: true, durationMs: Date.now() - started }, req);
+      return res.json({ ok: true, fromCache: true, ...cached.data().result });
+    }
 
     const finalChangedFiles = changedFiles || epData.changedFiles || [];
     const changedFilesList = finalChangedFiles.join(', ');
@@ -169,7 +212,7 @@ app.post('/episodes/explain', explainRules, async (req, res) => {
     };
     await cacheRef.set({ createdAt: new Date(), result: normalized });
     
-    auditLog('DATA_ACCESS', { action: 'explain_episode', projectId, episodeId, diffHash: finalDiffHash }, req);
+    auditLog('DATA_ACCESS', { action: 'explain_episode', projectId, episodeId, diffHash: finalDiffHash, fromCache: false, durationMs: Date.now() - started }, req);
     return res.json({ ok: true, ...normalized });
   } catch (err) {
     return sendError(res, req, err, ErrorCodes.AI_SERVICE_UNAVAILABLE);
@@ -183,6 +226,7 @@ app.post('/episodes/explain', explainRules, async (req, res) => {
 app.post('/branches/summarize', summarizeRules, async (req, res) => {
   const { uid } = req.user;
   const { projectId, branchName, episodes, customApiKey } = req.body;
+  const started = Date.now();
   
   try {
     const projectRef = await verifyProjectOwnership(uid, projectId, req, res);
@@ -205,8 +249,143 @@ app.post('/branches/summarize', summarizeRules, async (req, res) => {
       review_risks: Array.isArray(result.review_risks) ? result.review_risks : [],
     };
     
-    auditLog('DATA_ACCESS', { action: 'summarize_branch', projectId, branchName }, req);
+    auditLog('DATA_ACCESS', { action: 'summarize_branch', projectId, branchName, durationMs: Date.now() - started }, req);
     return res.json(responseData);
+  } catch (err) {
+    return sendError(res, req, err, ErrorCodes.AI_SERVICE_UNAVAILABLE);
+  }
+});
+
+/**
+ * POST /search/index
+ * Generates embeddings for calls in a project (manual trigger — AI cost is
+ * user-controlled). If `episodeId` is given, only that episode's calls are
+ * indexed. Vectors are stored under users/{uid}/projects/{pid}/vectors/{callId}.
+ */
+app.post('/search/index', indexSearchRules, async (req, res) => {
+  const { uid } = req.user;
+  const { projectId, episodeId, force } = req.body;
+
+  try {
+    const projectRef = await verifyProjectOwnership(uid, projectId, req, res);
+    if (!projectRef) return;
+
+    const embeddingCfg = await getEmbeddingProvider(uid, req, res);
+    if (!embeddingCfg) return;
+
+    const MAX_INDEX_PER_RUN = 200;
+    const EMBED_CONCURRENCY = 10;
+    const vectorsCol = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('vectors');
+
+    let calls;
+    if (episodeId) {
+      const epRef = await verifyEpisodeOwnership(uid, projectId, episodeId, req, res);
+      if (!epRef) return;
+      const epCalls = await epRef.collection('calls').orderBy('createdAt', 'desc').limit(MAX_INDEX_PER_RUN).get();
+      calls = epCalls.docs;
+    } else {
+      const episodesSnap = await db.collection('users').doc(uid).collection('projects').doc(projectId).collection('episodes').get();
+      calls = [];
+      for (const ep of episodesSnap.docs) {
+        if (calls.length >= MAX_INDEX_PER_RUN) break;
+        const remaining = MAX_INDEX_PER_RUN - calls.length;
+        const epCalls = await ep.ref.collection('calls').orderBy('createdAt', 'desc').limit(remaining).get();
+        for (const c of epCalls.docs) calls.push(c);
+      }
+    }
+
+    let indexed = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    await mapLimit(calls, EMBED_CONCURRENCY, async (call) => {
+      const vectorDoc = vectorsCol.doc(call.id);
+      if (!force) {
+        const existing = await vectorDoc.get();
+        if (existing.exists) {
+          skipped += 1;
+          return;
+        }
+      }
+
+      const cd = call.data();
+      const textToEmbed = cd.promptText || cd.modelResponse;
+      if (!textToEmbed) {
+        skipped += 1;
+        return;
+      }
+
+      try {
+        const { vector, model } = await embedText(textToEmbed, embeddingCfg);
+        await vectorDoc.set({
+          embedding: vector,
+          text: String(cd.promptText || cd.modelResponse || '').slice(0, 500),
+          episodeId: call.ref.parent.parent.id,
+          callId: call.id,
+          branchName: cd.branchName || null,
+          source: cd.source || null,
+          model,
+          indexedAt: new Date(),
+        });
+        indexed += 1;
+      } catch (err) {
+        failed += 1;
+        console.warn(JSON.stringify({
+          severity: 'WARNING',
+          event: 'embedding_failed',
+          callId: call.id,
+          episodeId: call.ref.parent.parent.id,
+          provider: embeddingCfg.provider,
+          error: err.message,
+        }));
+      }
+    });
+
+    auditLog('DATA_WRITE', { action: 'index_semantic', projectId, episodeId: episodeId || null, indexed, skipped, failed }, req);
+    return res.json({ ok: true, indexed, skipped, failed });
+  } catch (err) {
+    return sendError(res, req, err, ErrorCodes.AI_SERVICE_UNAVAILABLE);
+  }
+});
+
+/**
+ * POST /search/semantic
+ * Embeds the query and returns the most similar indexed calls via cosine
+ * similarity (in-memory rank over the project's indexed vectors).
+ */
+app.post('/search/semantic', semanticSearchRules, async (req, res) => {
+  const { uid } = req.user;
+  const { projectId, q, limit = 10 } = req.body;
+
+  try {
+    const projectRef = await verifyProjectOwnership(uid, projectId, req, res);
+    if (!projectRef) return;
+
+    const embeddingCfg = await getEmbeddingProvider(uid, req, res);
+    if (!embeddingCfg) return;
+
+    const { vector } = await embedText(q, embeddingCfg);
+
+    const vectorsCol = db.collection('users').doc(uid).collection('projects').doc(projectId).collection('vectors');
+    const snap = await vectorsCol.orderBy('indexedAt', 'desc').limit(2000).get();
+
+    const candidates = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const parsedMin = Number(process.env.SEMANTIC_SCORE_THRESHOLD);
+    const minScore = Number.isFinite(parsedMin) ? parsedMin : 0.3;
+    const ranked = rankBySimilarity(vector, candidates, limit, minScore);
+
+    const results = ranked
+      .map((r) => ({
+        callId: r.callId || r.id,
+        episodeId: r.episodeId || null,
+        branchName: r.branchName || null,
+        source: r.source || null,
+        text: r.text || '',
+        score: Math.round(r.score * 1000) / 1000,
+      }));
+
+    auditLog('DATA_ACCESS', { action: 'search_semantic', projectId, queryLength: q.length, results: results.length, minScore }, req);
+    return res.json({ ok: true, results });
   } catch (err) {
     return sendError(res, req, err, ErrorCodes.AI_SERVICE_UNAVAILABLE);
   }
