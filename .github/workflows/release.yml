@@ -5,6 +5,17 @@ on:
     branches: [main]
     tags: ['v*.*.*']
   workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - none
 
 permissions:
   contents: write
@@ -25,16 +36,52 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Check Version & Tag State
+      - name: Check or Bump Version
         id: version_check
         run: |
+          # 1. If triggered via manual GitHub UI dispatch
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.bump }}" != "none" ]; then
+            echo "Manual UI dispatch requested bump: ${{ inputs.bump }}"
+            node scripts/bump.js "${{ inputs.bump }}"
+            NEW_VER=$(node -p "require('./vscode-extension/package.json').version")
+            git add -A
+            git commit -m "chore(release): bump version to $NEW_VER [skip ci]" || true
+            git push origin main || true
+          fi
+
+          # 2. If commit message contains [release], [release patch], [release minor], [release major]
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          if echo "$COMMIT_MSG" | grep -iq '\[release major\]'; then
+            echo "Commit message requested major release bump"
+            node scripts/bump.js major
+            NEW_VER=$(node -p "require('./vscode-extension/package.json').version")
+            git add -A
+            git commit -m "chore(release): bump version to $NEW_VER [skip ci]" || true
+            git push origin main || true
+          elif echo "$COMMIT_MSG" | grep -iq '\[release minor\]'; then
+            echo "Commit message requested minor release bump"
+            node scripts/bump.js minor
+            NEW_VER=$(node -p "require('./vscode-extension/package.json').version")
+            git add -A
+            git commit -m "chore(release): bump version to $NEW_VER [skip ci]" || true
+            git push origin main || true
+          elif echo "$COMMIT_MSG" | grep -iqE '\[release patch\]|\[release\]'; then
+            echo "Commit message requested patch release bump"
+            node scripts/bump.js patch
+            NEW_VER=$(node -p "require('./vscode-extension/package.json').version")
+            git add -A
+            git commit -m "chore(release): bump version to $NEW_VER [skip ci]" || true
+            git push origin main || true
+          fi
+
+          # 3. Check current version & tag state
           VERSION=$(node -p "require('./vscode-extension/package.json').version")
           TAG="v$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists."
+            echo "Tag $TAG already exists on git."
             if [[ "${{ github.ref }}" == "refs/tags/"* ]]; then
               echo "Triggered explicitly by tag push. Proceeding to release."
               echo "should_release=true" >> "$GITHUB_OUTPUT"

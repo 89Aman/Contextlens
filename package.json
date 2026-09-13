@@ -21,7 +21,13 @@
     "watch": "npm --prefix vscode-extension run watch",
     "test": "npm --prefix vscode-extension run test:unit",
     "package": "npm --prefix vscode-extension run package",
-    "package:vsix": "cd vscode-extension && npx --yes @vscode/vsce package --no-dependencies"
+    "package:vsix": "cd vscode-extension && npx --yes @vscode/vsce package --no-dependencies",
+    "bump:patch": "node scripts/bump.js patch",
+    "bump:minor": "node scripts/bump.js minor",
+    "bump:major": "node scripts/bump.js major",
+    "release:patch": "node scripts/bump.js patch && git add -A && git commit -m \"chore(release): bump version [skip ci]\" && git push origin dev && git checkout main && git merge dev && git push origin main && git checkout dev",
+    "release:minor": "node scripts/bump.js minor && git add -A && git commit -m \"chore(release): bump version [skip ci]\" && git push origin dev && git checkout main && git merge dev && git push origin main && git checkout dev",
+    "release:major": "node scripts/bump.js major && git add -A && git commit -m \"chore(release): bump version [skip ci]\" && git push origin dev && git checkout main && git merge dev && git push origin main && git checkout dev"
   },
   "overrides": {
     "mocha": {
