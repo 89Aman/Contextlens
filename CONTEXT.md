@@ -62,7 +62,7 @@ ContextLens/
 │
 ├── docs/                                   # Documentation
 │   ├── ARCHITECTURE.md                     # Complete architectural design specification
-│   ├── CONTEXT.md                          # This file: consolidated technical context
+│   ├── CONTEXT.md                          # Consolidated technical context
 │   ├── PRIVACY.md                          # Zero-cloud local privacy policy
 │   ├── ROADMAP.md                          # Project roadmap and upcoming milestones
 │   └── SECURITY.md                         # Security posture and vulnerability reporting

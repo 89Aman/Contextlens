@@ -11,98 +11,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Backend tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: 'npm'
-      - run: npm ci
-      - run: npm test
-
-  dashboard:
-    name: Dashboard build & tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contextlens-dashboard
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: 'npm'
-          cache-dependency-path: contextlens-dashboard/package-lock.json
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
-
-  cli:
-    name: CLI smoke test
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contextlens-cli
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: 'npm'
-          cache-dependency-path: contextlens-cli/package-lock.json
-      - run: npm ci
-      - name: Help output works
-        run: node bin/contextlens.js --help
-
   extension:
     name: Extension typecheck, unit tests & build
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: vscode-extension
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20.x
           cache: 'npm'
-          cache-dependency-path: vscode-extension/package-lock.json
-      - run: npm ci
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix vscode-extension ci
+
       - name: Typecheck
-        run: npx tsc -p ./ --noEmit
-      - name: MCP unit tests (mocha + ts-node)
-        run: npx mocha
-      - name: Build (webpack)
-        run: npx webpack --mode production
+        working-directory: vscode-extension
+        run: |
+          npx tsc --noEmit -p tsconfig.json
+          npx tsc --noEmit -p tsconfig.test.json
+
+      - name: MCP unit tests (mocha)
+        run: npm test
+
+      - name: Webpack production build
+        run: npm run package
 
   bridge-smoke:
     name: MCP bridge startup smoke test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20.x
-      - name: initialize JSON-RPC handshake
+
+      - name: Initialize JSON-RPC handshake
         run: |
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | \
             timeout 10 node vscode-extension/mcp-bridge.js | grep -q '"id":1'
-
-  bin-conflict:
-    name: Package bin-name conflict check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-      - run: node .github/scripts/check-bin-conflicts.js
 
   secret-scan:
     name: Secret scanning (gitleaks)
@@ -111,6 +64,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -2,228 +2,178 @@
 
 <img src="vscode-extension/resources/icon.png" alt="ContextLens" width="128" />
 
-# ContextLens
+# ContextLens Local Core
 
-**The AI context layer for your codebase.**
+**The 100% Local-First AI Context Engine & Persistent Knowledge Graph for VS Code.**
 
-Track coding intent, capture AI interactions, and expose your development history to any MCP-compatible AI client.
+Capture coding intent, extract symbols with zero tokens, maintain an evolving decision graph, and expose your development context to any MCP-compatible AI agent—completely offline and private.
 
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/Noventra-Labs.contextlens?label=VS%20Code%20Marketplace&logo=visual-studio-code&style=flat-square)](https://marketplace.visualstudio.com/items?itemName=Noventra-Labs.contextlens)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/Noventra-labs/Contextlens/ci.yml?style=flat-square&label=CI)](https://github.com/Noventra-labs/Contextlens/actions)
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green?style=flat-square&logo=node.js)](https://nodejs.org)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.80%2B-007ACC?style=flat-square&logo=visual-studio-code)](https://code.visualstudio.com)
+[![Model Context Protocol](https://img.shields.io/badge/MCP-Compatible-brightgreen?style=flat-square)](https://modelcontextprotocol.io)
+[![Privacy](https://img.shields.io/badge/Privacy-100%25%20Local-success?style=flat-square)](#-privacy--zero-cloud-guarantee)
 
-[Installation](#-installation) · [Features](#-features) · [Quick Start](#-quick-start) · [Architecture](#-architecture) · [Documentation](#-documentation) · [Contributing](#-contributing)
+[Quick Start](#-quick-start) · [Architecture](#-architecture) · [Features](#-core-features) · [MCP Integration](#-mcp-integration) · [Commands](#-vs-code-commands)
 
 </div>
 
 ---
 
-> [!WARNING]
-> **ContextLens is under active development.** Some features are in preview and may change without notice.
+## 🤔 Why ContextLens Local Core?
 
-## 🤔 Why ContextLens?
+Every coding session generates ephemeral context that AI tools (Cursor, Claude, Antigravity) lose between chats. Traditional approaches attempt to sync your code to cloud servers or run expensive LLM passes on every keystroke.
 
-Every coding session generates context that AI tools lose between conversations. ContextLens captures the *why* behind every change — diffs, AI interactions, decisions — and makes it available to any AI client through the **Model Context Protocol (MCP)**.
+**ContextLens Local Core** solves this with a lean, zero-cloud architecture:
+- **Zero Cloud Dependence:** No accounts, no subscriptions, no cloud databases. All state lives inside your repository in `.contextlens/` (automatically gitignored).
+- **Pass 1 Deterministic Extractor:** Extracts functions, classes, and types using AST/regex parsing in `<5ms` with **0 tokens**.
+- **Passive Intent Mining:** Automatically discovers decisions from code comments (`// WHY:`, `// DECISION:`) and Git commit bodies.
+- **Embedded MCP Server:** Exposes your active episode context and persistent graph directly to Cursor, Claude Desktop, and Antigravity over local stdio or `127.0.0.1:3012`.
+- **One-Click PR Generator:** Assembles your active episode subgraph and generates a GitHub PR description offline or with your BYOK Gemini key.
 
-**Without ContextLens:** Each AI session starts from scratch, re-analyzing your code.
-**With ContextLens:** AI tools access your full development history, past decisions, and project context.
+---
 
-## ✨ Features
+## ⚡ Quick Start
 
-### Episode-Based Context Tracking
-- Organize work into logical episodes (features, bugfixes, refactors)
-- Automatically capture diffs and AI interactions
-- Build a semantic history of your project
+### 1. Install the Extension
+Download the latest `.vsix` bundle or package it directly from source:
+```powershell
+# In repository root
+npm run package:vsix
 
-### MCP Server (Model Context Protocol)
-- **9 Tools**: Status, episodes, AI logging, diff explanation, context search
-- **5 Resources**: Workspace state, git diff, episodes, diagnostics, symbols
-- **5 Prompts**: Code review, test generation, security audit, diff explanation
-- Works with Claude Desktop, Cursor, Antigravity IDE, Gemini CLI, and more
-
-### Security-First Design
-- Rotating authentication tokens (30-min TTL)
-- Per-client rate limiting with burst protection
-- Input validation on all tool calls
-- Local-only binding (127.0.0.1)
-
-### Developer Dashboard
-- Visual timeline of project progress
-- AI-generated PR descriptions and impact assessments
-- Branch-level analysis
-
-## 🎯 Supported MCP Clients
-
-| Client | Status | Setup |
-|--------|--------|-------|
-| Claude Desktop | ✅ Supported | Auto-setup or manual |
-| Cursor | ✅ Supported | Auto-setup or manual |
-| Antigravity IDE | ✅ Supported | Manual config |
-| VS Code Agent | ✅ Built-in | Automatic |
-| Gemini CLI | ✅ Supported | Manual config |
-| OpenAI Agents SDK | ✅ Supported | Python integration |
-
-## 📦 Installation
-
-### VS Code Extension
-
-```bash
-# From VS Code Marketplace
-ext install Noventra-Labs.contextlens
+# Install into VS Code
+code --install-extension vscode-extension/contextlens-agent-1.0.3.vsix
 ```
 
-Or search **"ContextLens"** in the VS Code Extensions panel.
-
-### MCP Bridge (npm)
-
-```bash
-npm install -g @contextlens/mcp
+### 2. Auto-Setup MCP in Your AI Clients
+Open VS Code Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run:
+```text
+ContextLens: Auto-Setup MCP in AI Clients
 ```
+This automatically configures:
+- **Cursor Workspace:** `<workspaceRoot>/.cursor/mcp.json`
+- **Cursor Global:** `~/.cursor/mcp.json`
+- **Claude Desktop:** `%APPDATA%\Claude\claude_desktop_config.json` (or macOS equivalent)
+- **Agent Rules:** Injects prompt directives into `.cursorrules` and `CLAUDE.md`.
 
-### Auto-Setup for AI Clients
-
-1. Install the VS Code extension
-2. Open Command Palette → **ContextLens: Auto-Setup MCP in AI Clients**
-3. Done! Your AI client can now access ContextLens tools.
-
-### Manual Setup
-
-Add to your AI client's MCP configuration:
-
-```json
-{
-  "contextlens": {
-    "command": "node",
-    "args": ["/path/to/mcp-bridge.js"]
-  }
-}
-```
-
-Use **ContextLens: Copy MCP Configuration** to get the correct path.
-
-## 🚀 Quick Start
-
-The canonical ContextLens flow is: install → sign in → start an episode → code
-with your AI → close the episode → review context.
-
-### 1. Start an Episode
-
-Ask your AI client:
-> "Use the start_episode tool to begin tracking my work on the login feature"
-
-Or run the **ContextLens: New Episode** command in VS Code. Episodes are also
-auto-created when you switch branches.
-
-### 2. Code as Usual
-
-ContextLens **automatically** captures:
-
-- Git diffs (redacted, truncated to 6000 chars)
-- Git commit messages
-- File changes (workspace-relative paths)
-- Branch switches (closing/opening episodes)
-
-### 3. Get Context
-
-Ask your AI client:
-> "What changes have I made in this episode? Use explain_diff to analyze them."
-
-AI actions — `explain_diff`, `explain_past_changes`, `summarize_branch`,
-`search_context` — are **manual triggers only**. ContextLens never invokes an
-AI model automatically, so you control AI cost.
-
-### 4. Search Past Work
-
-> "Search my past episodes for anything related to authentication using search_context"
-
-### Automatic vs. manual capture
-
-| Captured automatically | Manual (AI-triggered) actions |
-|---|---|
-| Diffs, commits, file saves, branch switches | `log_ai_call`, `explain_diff`, `explain_past_changes`, `search_context` |
-| Paused with **ContextLens: Pause / Resume Capture** | Always opt-in via your AI client |
-
-### Where your data lives
-
-- **Local only:** diffs and AI prompts are redacted *before* they leave the
-  machine; the offline sync queue (`cl_queue.json`) is local to VS Code.
-- **Uploaded (after sign-in):** redacted episode metadata, diff summaries, and
-  AI prompt/response text are synced to your authenticated Firebase project.
-  See [Privacy](docs/PRIVACY.md).
+---
 
 ## 🏗️ Architecture
 
+```text
+  Developer Actions (Save, Edit, Git Commit)
+                    │
+                    ▼
+     Pass 1 Deterministic Extractor (0 tokens, <5ms)
+   ┌───────────────────────────────────────────────┐
+   │ • Regex/AST multi-language parser             │
+   │ • Intent tags: WHY:, DECISION:, NOTE:, ARCH:  │
+   │ • Git commit body rationale extractor         │
+   └───────────────────────┬───────────────────────┘
+                           ▼
+              Local Knowledge Graph (.contextlens/)
+   ┌───────────────────────────────────────────────┐
+   │ graph.json (Files, Decisions, Active Episode) │
+   │ archive/<id>.json (Compacted leaf symbols)    │
+   └───────────────┬───────────────────────────────┘
+                   │
+         ┌─────────┴────────────────────────┐
+         ▼                                  ▼
+   Embedded MCP Server              One-Click PR Generator
+ (127.0.0.1:3012 / stdio)        (Offline or BYOK Gemini)
+         │                                  │
+         ▼                                  ▼
+Cursor / Claude / Antigravity       Formatted GitHub PR Body
 ```
-┌─────────────────────┐         ┌─────────────────────────────────┐
-│   AI Client         │         │   VS Code Extension             │
-│   (Claude, Cursor)  │         │                                 │
-└────────┬────────────┘         │  ┌───────────────────────────┐  │
-         │ stdio JSON-RPC       │  │  ToolRegistry (9 tools)   │  │
-         ▼                      │  ├───────────────────────────┤  │
-┌────────┴────────────┐         │  │  Resources (5 URIs)       │  │
-│   mcp-bridge.js     │◄───HTTP─│  ├───────────────────────────┤  │
-│   (MCP Server)      │ :3012   │  │  Prompts (5 templates)    │  │
-└─────────────────────┘         │  ├───────────────────────────┤  │
-                                │  │  Security Layer           │  │
-                                │  │  ├── TokenManager         │  │
-                                │  │  ├── RateLimiter          │  │
-                                │  │  └── InputValidator       │  │
-                                │  └───────────────────────────┘  │
-                                └─────────────────────────────────┘
-```
-
-### Repository Structure
-
-| Component | Path | Description |
-|-----------|------|-------------|
-| **VS Code Extension** | [`/vscode-extension`](./vscode-extension/) | Primary client with MCP server |
-| **MCP Implementation** | [`/vscode-extension/src/mcp/`](./vscode-extension/src/mcp/) | Tools, resources, prompts, security |
-| **MCP Bridge** | [`/vscode-extension/mcp-bridge.js`](./vscode-extension/mcp-bridge.js) | stdio JSON-RPC bridge for AI clients |
-| **Web Dashboard** | [`/contextlens-dashboard`](./contextlens-dashboard/) | React-based visual interface |
-| **Backend** | [`/src`](./src/) | Firebase Cloud Functions + Firestore |
-| **Documentation** | [`/docs`](./docs/) | Architecture, API, tutorials |
-
-## 📖 Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Getting Started](docs/mcp/GettingStarted.md) | Installation and first steps |
-| [Architecture](docs/mcp/Architecture.md) | System design and data flow |
-| [Security](docs/mcp/Security.md) | Authentication, rate limiting, error codes |
-| [Examples](docs/mcp/Examples.md) | Client configuration examples |
-| [API Reference](docs/mcp/APIReference.md) | Tools, resources, prompts reference |
-| [Data Model](docs/data-model.md) | Episode lifecycle, fields, sync & edge cases |
-| [Privacy Policy](docs/PRIVACY.md) | How ContextLens handles codebase data and secrets |
-| [Troubleshooting](docs/mcp/Troubleshooting.md) | Common issues and solutions |
-| [FAQ](docs/mcp/FAQ.md) | Frequently asked questions |
-
-## 🤝 Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Development setup
-- Branch naming and commit conventions
-- How to add new MCP tools and resources
-- Testing requirements
-
-## 🔒 Security
-
-Found a vulnerability? Please see [SECURITY.md](SECURITY.md) for responsible disclosure.
-
-## 📋 Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for planned features and milestones.
-
-## 📄 License
-
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-<div align="center">
+## ✨ Core Features
 
-Built with ❤️ by [Noventra Labs](https://github.com/Noventra-labs)
+### 1. Local Workspace Knowledge Graph
+All data is stored inside `.contextlens/` at your workspace root:
+- `graph.json`: Nodes (`file`, `symbol`, `decision`, `commit`, `episode`) and weighted edges (`EXTRACTED` = 1.0, `AI_INFERRED` = 0.8).
+- `episodes.json`: Workspace work sessions and file save timelines.
+- `archive/`: Archived leaf symbols for closed episodes.
 
-[⭐ Star this repo](https://github.com/Noventra-labs/Contextlens) · [🐛 Report Bug](https://github.com/Noventra-labs/Contextlens/issues/new?template=bug_report.yml) · [💡 Request Feature](https://github.com/Noventra-labs/Contextlens/issues/new?template=feature_request.yml)
+### 2. Zero-Token Deterministic Extractor
+The Pass 1 engine parses modified files instantaneously on save without sending any code to an LLM:
+- **Supported Languages:** TypeScript, JavaScript, Python, Go, Rust, Java.
+- **Extracted Symbols:** Functions, methods, classes, interfaces, structs, types.
+- **Intent Comment Mining:** Annotate your code with intent comments:
+  ```typescript
+  // WHY: Debounce autosave to prevent disk thrashing during rapid edits
+  // DECISION: Cache token validation in memory with 30s TTL
+  ```
+  ContextLens automatically converts these comments into first-class `decision` nodes in the active graph.
+- **Commit Body Mining:** Paragraphs written in commit messages (line 3+) are automatically linked as decision nodes to the commit and episode.
 
-</div>
+### 3. Two-Tier Graph Compaction
+As your project grows across dozens of episodes, active `graph.json` stays lean and under 100 KB:
+- When an episode closes, detailed `sym:*` (symbol) nodes are pruned from `graph.json` and archived in `.contextlens/archive/<episodeId>.json`.
+- High-level `file`, `decision`, and `episode` summary nodes remain in `graph.json` for fast semantic retrieval.
+
+### 4. Embedded MCP Server
+ContextLens runs an embedded Model Context Protocol (MCP) server on port `3012` with rotating authentication tokens and rate limiting:
+- `contextlens_get_graph`: Lets external AI clients inspect the active episode's subgraph or project graph.
+- `contextlens_log_decision`: Allows external AI agents to record design decisions directly into the graph.
+- `contextlens_status`: Returns current episode metadata and active file count.
+- `contextlens_explain_diff`: Analyzes active changes against the workspace state.
+
+### 5. One-Click PR Generation
+Generate comprehensive pull request descriptions with a single command:
+1. Run `ContextLens: Generate PR from Graph` in the Command Palette.
+2. ContextLens aggregates modified files, extracted symbols, mined decisions, and commit history.
+3. Formats a structured PR summary (copied to clipboard and opened in a Markdown tab).
+4. Supports offline deterministic generation or optional BYOK Gemini enhancement (`contextlens.apiKey`).
+
+---
+
+## 🔒 Privacy & Zero-Cloud Guarantee
+
+ContextLens Local Core is built on strict local-first principles:
+- **No telemetry by default.**
+- **No cloud dependencies or mandatory user accounts.**
+- **`.contextlens/` is automatically added to `.gitignore`.**
+- **All MCP bindings listen strictly on `127.0.0.1`.**
+
+---
+
+## ⌨️ VS Code Commands
+
+| Command | Title | Description |
+|---|---|---|
+| `contextlens.generatePrFromGraph` | **Generate PR from Graph** | Builds markdown PR description from active episode subgraph |
+| `contextlens.autoSetupMcp` | **Auto-Setup MCP in AI Clients** | Configures Cursor, Claude Desktop, and agent rules |
+| `contextlens.installAgentRules` | **Install Agent Memory Directives** | Writes directives to `.cursorrules` and `CLAUDE.md` |
+| `contextlens.newEpisode` | **New Episode** | Starts a new contextual work session |
+| `contextlens.closeEpisode` | **Close Episode** | Finalizes session and compacts symbols to archive |
+| `contextlens.quickStatus` | **Quick Status** | Displays active episode and graph summary in status bar |
+
+---
+
+## 🛠️ Development & Building
+
+```powershell
+# Clone the repository
+git clone https://github.com/Noventra-Labs/ContextLens.git
+cd ContextLens
+
+# Install dependencies in vscode-extension
+cd vscode-extension
+npm install
+
+# Run unit test suite (38 passing tests)
+npm run test:unit
+
+# Build extension with Webpack
+npm run compile
+
+# Package production VSIX (61 KB)
+npx @vscode/vsce package --no-dependencies
+```
+
+---
+
+## 📄 License
+
+MIT © [Noventra Labs](https://github.com/Noventra-Labs)

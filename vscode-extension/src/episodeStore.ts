@@ -1,8 +1,11 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ApiClient } from './apiClient';
 import { GitContext } from './gitContext';
 import { getAuthManager } from './auth';
 import { SyncEngine } from './syncEngine';
+import { GraphStore } from './graph/graphStore';
 import { randomUUID } from 'crypto';
 
 /**
@@ -97,10 +100,63 @@ export class EpisodeStore {
     }
   }
 
+  private isLocalMode(): boolean {
+    return vscode.workspace.getConfiguration('contextlens').get<boolean>('localOnly', true);
+  }
+
+  private saveToLocalJson(root: string): void {
+    try {
+      const dir = path.join(root, '.contextlens');
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const filePath = path.join(dir, 'episodes.json');
+      let data: any = { activeEpisode: null, history: [] };
+      if (fs.existsSync(filePath)) {
+        try {
+          data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        } catch {}
+      }
+      data.activeEpisode = this.activeEpisodes[root] || null;
+      data.updatedAt = Date.now();
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[ContextLens] Failed to save local episodes.json:', err);
+    }
+  }
+
+  private appendEpisodeHistory(root: string, ep: Episode): void {
+    try {
+      const dir = path.join(root, '.contextlens');
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const filePath = path.join(dir, 'episodes.json');
+      let data: any = { activeEpisode: null, history: [] };
+      if (fs.existsSync(filePath)) {
+        try {
+          data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        } catch {}
+      }
+      if (!Array.isArray(data.history)) data.history = [];
+      data.history.push({ ...ep, closedAt: Date.now(), status: 'closed' });
+      data.activeEpisode = null;
+      data.updatedAt = Date.now();
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[ContextLens] Failed to append episode history:', err);
+    }
+  }
+
   private save() {
     this.context.workspaceState.update('contextlens.activeEpisodes', this.activeEpisodes);
     this.context.workspaceState.update('contextlens.projectIds', this.projectIds);
     this.context.workspaceState.update('contextlens.projectNames', this.projectNames);
+
+    const root = this.getActiveWorkspaceRoot();
+    if (root) {
+      this.saveToLocalJson(root);
+    }
     this.onDidChangeEmitter.fire();
   }
 
@@ -214,16 +270,28 @@ export class EpisodeStore {
 
     const folder = vscode.workspace.workspaceFolders?.find(f => f.uri.fsPath === root);
     if (!folder) return null;
+    const folderName = folder.name;
 
-    // ── Auth gate ──
+    if (this.isLocalMode()) {
+      const localId = `local_${folderName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+      this.projectIds[root] = localId;
+      this.projectNames[root] = folderName;
+      this.save();
+      return localId;
+    }
+
+    // ── Auth gate (cloud mode only) ──
     const authManager = getAuthManager();
     const authState = await authManager.loadAuthState();
     if (!authState) {
-      // Not signed in yet — don't block activation. User will sign in later.
-      return null;
+      // Not signed in yet — fallback to local ID instead of failing
+      const localId = `local_${folderName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+      this.projectIds[root] = localId;
+      this.projectNames[root] = folderName;
+      this.save();
+      return localId;
     }
 
-    const folderName = folder.name;
     let repoUrl: string | undefined;
     try {
       const gitCtx = await GitContext.getContext(root);
@@ -251,8 +319,12 @@ export class EpisodeStore {
       this.save();
       return res.projectId;
     } catch (err: any) {
-      vscode.window.showErrorMessage(`ContextLens: Failed to create project for ${folderName} — ${err.message}`);
-      return null;
+      console.warn(`ContextLens: Backend createProject failed, using local: ${err.message}`);
+      const localId = `local_${folderName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+      this.projectIds[root] = localId;
+      this.projectNames[root] = folderName;
+      this.save();
+      return localId;
     }
   }
 
@@ -271,23 +343,51 @@ export class EpisodeStore {
       return;
     }
 
-    // ── Auth gate ──
-    await getAuthManager().ensureSignedIn();
-
     const root = workspaceRoot || this.getActiveWorkspaceRoot();
     if (!root) return;
-
-    let projectId = await this.ensureProject(root);
-    if (!projectId) {
-      vscode.window.showErrorMessage('ContextLens: No project. Open a workspace first.');
-      return;
-    }
 
     let branchName = 'main';
     try {
       const gitCtx = await GitContext.getContext(root);
       if (gitCtx.branch) branchName = gitCtx.branch;
     } catch {}
+
+    const now = Date.now();
+
+    if (this.isLocalMode()) {
+      await this.ensureProject(root);
+      const localEpisodeId = `ep_${now}_${Math.random().toString(36).slice(2, 7)}`;
+      this.activeEpisodes[root] = {
+        id: localEpisodeId,
+        name: trimmedName,
+        callCount: 0,
+        changedFiles: [],
+        note: '',
+        branchName,
+        startedAt: now,
+        lastActivityAt: now,
+      };
+
+      const graphStore = GraphStore.get(root);
+      graphStore.addNode({
+        id: localEpisodeId,
+        label: trimmedName,
+        type: 'episode',
+        timestamp: now,
+        metadata: { branchName }
+      });
+      graphStore.save();
+
+      this.save();
+      return;
+    }
+
+    // ── Cloud path (fallback if localOnly is explicitly set to false) ──
+    let projectId = await this.ensureProject(root);
+    if (!projectId) {
+      vscode.window.showErrorMessage('ContextLens: No project. Open a workspace first.');
+      return;
+    }
 
     try {
       const res = await ApiClient.createEpisode({
@@ -296,7 +396,6 @@ export class EpisodeStore {
         branchName,
       });
 
-      const now = Date.now();
       this.activeEpisodes[root] = {
         id: res.episodeId,
         name: trimmedName,
@@ -309,50 +408,20 @@ export class EpisodeStore {
       };
       this.save();
     } catch (err: any) {
-      // Recovery check: if project was deleted/not found on server (404 / RESOURCE_NOT_FOUND)
-      const isNotFoundError = err.message && (
-        err.message.includes('not found') || 
-        err.message.includes('deleted') || 
-        err.message.includes('RESOURCE_NOT_FOUND') ||
-        err.message.includes('404')
-      );
-
-      if (isNotFoundError) {
-        delete this.projectIds[root];
-        delete this.projectNames[root];
-        this.save();
-
-        projectId = await this.ensureProject(root);
-        if (projectId) {
-          try {
-            const res = await ApiClient.createEpisode({
-              projectId,
-              label: trimmedName,
-              branchName,
-            });
-
-            const now = Date.now();
-            this.activeEpisodes[root] = {
-              id: res.episodeId,
-              name: trimmedName,
-              callCount: 0,
-              changedFiles: [],
-              note: '',
-              branchName,
-              startedAt: now,
-              lastActivityAt: now,
-            };
-            this.save();
-            return;
-          } catch (retryErr: any) {
-            vscode.window.showErrorMessage(`ContextLens: Failed to create episode — ${retryErr.message}`);
-          }
-        } else {
-          vscode.window.showErrorMessage('ContextLens: Project ID was invalid, and could not be re-created.');
-        }
-      } else {
-        vscode.window.showErrorMessage(`ContextLens: Failed to create episode — ${err.message}`);
-      }
+      // Local fallback on cloud failure
+      console.warn('[ContextLens] Cloud createEpisode failed, using local:', err);
+      const localEpisodeId = `ep_${now}_${Math.random().toString(36).slice(2, 7)}`;
+      this.activeEpisodes[root] = {
+        id: localEpisodeId,
+        name: trimmedName,
+        callCount: 0,
+        changedFiles: [],
+        note: '',
+        branchName,
+        startedAt: now,
+        lastActivityAt: now,
+      };
+      this.save();
     }
   }
 
@@ -367,23 +436,28 @@ export class EpisodeStore {
     const ep = this.activeEpisodes[root];
     const projId = this.projectIds[root];
 
-    if (!ep || !projId) {
+    if (!ep) {
       delete this.activeEpisodes[root];
       this.save();
       return;
     }
 
+    this.appendEpisodeHistory(root, ep);
+
     try {
-      await ApiClient.closeEpisode({
-        projectId: projId,
-        episodeId: ep.id,
-      });
-    } catch (err: any) {
-      // Gracefully handle case where project or episode was deleted on server (404)
-      if (err.message && (err.message.includes('not found') || err.message.includes('deleted'))) {
-        console.log('Episode already gone on server. Cleared locally.');
-      } else {
-        vscode.window.showWarningMessage(`ContextLens: Could not close episode on server — ${err.message}`);
+      GraphStore.get(root).compactEpisodeSymbols(ep.id);
+    } catch (err) {
+      console.warn('[ContextLens] Symbol compaction failed:', err);
+    }
+
+    if (!this.isLocalMode() && projId) {
+      try {
+        await ApiClient.closeEpisode({
+          projectId: projId,
+          episodeId: ep.id,
+        });
+      } catch (err: any) {
+        console.warn('[ContextLens] Cloud close episode failed:', err.message);
       }
     }
 
@@ -402,7 +476,7 @@ export class EpisodeStore {
     const ep = this.activeEpisodes[root];
     const projId = this.projectIds[root];
 
-    if (!ep || !projId) {
+    if (!ep) {
       delete this.activeEpisodes[root];
       this.save();
       return;
@@ -410,17 +484,26 @@ export class EpisodeStore {
 
     // ENH-003: Capture context snapshot before closing
     this.captureContextSnapshot(ep.branchName);
+    this.appendEpisodeHistory(root, ep);
 
-    this.syncEngine?.enqueue({
-      type: 'episode_close',
-      endpoint: '/episodes/close',
-      projectId: projId,
-      episodeId: ep.id,
-      payload: {
+    try {
+      GraphStore.get(root).compactEpisodeSymbols(ep.id);
+    } catch (err) {
+      console.warn('[ContextLens] Symbol compaction failed:', err);
+    }
+
+    if (!this.isLocalMode() && projId) {
+      this.syncEngine?.enqueue({
+        type: 'episode_close',
+        endpoint: '/episodes/close',
         projectId: projId,
         episodeId: ep.id,
-      }
-    });
+        payload: {
+          projectId: projId,
+          episodeId: ep.id,
+        }
+      });
+    }
 
     delete this.activeEpisodes[root];
     this.save();
@@ -441,26 +524,24 @@ export class EpisodeStore {
     const projId = await this.ensureProject(root);
     if (!projId) return;
 
-    // Use a real UUID v4 immediately so backend validation (which requires UUID
-    // format) never rejects the episodeId when the SyncEngine eventually flushes.
     const localEpisodeId = randomUUID();
+    const now = Date.now();
 
-    // Fix 1: Send localEpisodeId as episodeId in payload so backend stores
-    // the same ID that local state references. No more ID mismatch.
-    this.syncEngine?.enqueue({
-      type: 'episode_create',
-      endpoint: '/episodes/create',
-      projectId: projId,
-      episodeId: localEpisodeId,
-      payload: {
+    if (!this.isLocalMode()) {
+      this.syncEngine?.enqueue({
+        type: 'episode_create',
+        endpoint: '/episodes/create',
         projectId: projId,
         episodeId: localEpisodeId,
-        label: trimmedName,
-        branchName: branchName || 'main',
-      }
-    });
+        payload: {
+          projectId: projId,
+          episodeId: localEpisodeId,
+          label: trimmedName,
+          branchName: branchName || 'main',
+        }
+      });
+    }
 
-    const now = Date.now();
     this.activeEpisodes[root] = {
       id: localEpisodeId,
       name: trimmedName,
@@ -471,9 +552,18 @@ export class EpisodeStore {
       startedAt: now,
       lastActivityAt: now,
     };
-    this.save();
 
-    // ENH-003: Restore context snapshot if one exists for this branch
+    const graphStore = GraphStore.get(root);
+    graphStore.addNode({
+      id: localEpisodeId,
+      label: trimmedName,
+      type: 'episode',
+      timestamp: now,
+      metadata: { branchName: branchName || 'main' }
+    });
+    graphStore.save();
+
+    this.save();
     this.restoreContextSnapshot(branchName || 'main');
   }
 
@@ -533,6 +623,27 @@ export class EpisodeStore {
     if (ep && !ep.changedFiles.includes(filePath)) {
       ep.changedFiles.push(filePath);
       ep.lastActivityAt = Date.now();
+
+      const relativePath = path.isAbsolute(filePath) ? path.relative(root, filePath) : filePath;
+      const graphStore = GraphStore.get(root);
+      const fileNodeId = `file:${relativePath}`;
+      graphStore.addNode({
+        id: fileNodeId,
+        label: relativePath,
+        type: 'file',
+        sourceEpisode: ep.id,
+        timestamp: Date.now()
+      });
+      graphStore.addEdge({
+        source: ep.id,
+        target: fileNodeId,
+        relation: 'modifies',
+        confidence: 'EXTRACTED',
+        confidenceScore: 1.0,
+        sourceEpisode: ep.id
+      });
+      graphStore.save();
+
       this.save();
     }
   }

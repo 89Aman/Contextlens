@@ -107,6 +107,20 @@ async function handleLegacy(
     };
 
     EpisodeStore.get().enqueueCall(payload);
+
+    const root = EpisodeStore.get().getActiveWorkspaceRoot();
+    if (root) {
+      const activeEp = EpisodeStore.get().getActiveEpisode(root);
+      const { GraphStore } = require('./graph/graphStore');
+      const graphStore = GraphStore.get(root);
+      const promptSnippet = (body.promptText || '').slice(0, 100);
+      graphStore.logDecision(promptSnippet, activeEp?.id, {
+        intent: body.intentTag,
+        modelName: body.modelName,
+        source: body.source || 'mcp'
+      });
+    }
+
     return { status: 200, body: { ok: true } };
   }
 

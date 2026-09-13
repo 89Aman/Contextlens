@@ -1,0 +1,41 @@
+{
+  "workspace": "ContextLens",
+  "registered_skills": [
+    "supervisor",
+    "jeorge",
+    "neo",
+    "council",
+    "caveman",
+    "caveman-commit",
+    "caveman-review",
+    "caveman-stats"
+  ],
+  "registered_mcp_servers": [
+    "StitchMCP",
+    "android-management-api",
+    "chrome-devtools-mcp",
+    "cloudrun",
+    "data-agent-kit",
+    "google-cloud-logging",
+    "google-cloud-monitoring",
+    "google-cloud-pubsub",
+    "google-cloud-quotas",
+    "google-cloud-resource-manager",
+    "google-compute-engine",
+    "google-home-developer",
+    "notebooks",
+    "supabase-db",
+    "vertex-ai-search",
+    "visualization"
+  ],
+  "local_core_capabilities": [
+    "pass1_deterministic_ast_extractor",
+    "git_intent_comment_decision_miner",
+    "two_tier_graph_compactor",
+    "embedded_mcp_graph_tools",
+    "one_click_pr_generator",
+    "agent_memory_directive_auto_injector",
+    "vsix_production_bundler"
+  ],
+  "last_updated": "2026-09-14"
+}
