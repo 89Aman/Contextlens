@@ -1,143 +1,138 @@
-name: Auto Release & Publish
+name: CI & Release
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'contextlens-cli/**'
-      - 'vscode-extension/**'
-      - 'docs/**'
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  # ── 1. Always runs: type-check + unit tests ──────────────────────────────
+  test:
+    name: Test
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Configure Git
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Detect Changes
-        id: detect
-        run: |
-          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-          else
-            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.event.after }})
-          fi
-          
-          echo "Changed files:"
-          echo "$CHANGED_FILES"
-          
-          CLI_CHANGED="false"
-          EXT_CHANGED="false"
-          
-          if echo "$CHANGED_FILES" | grep -q '^contextlens-cli/'; then
-            CLI_CHANGED="true"
-          fi
-          if echo "$CHANGED_FILES" | grep -q '^vscode-extension/'; then
-            EXT_CHANGED="true"
-          fi
-          
-          echo "cli_changed=$CLI_CHANGED" >> $GITHUB_OUTPUT
-          echo "ext_changed=$EXT_CHANGED" >> $GITHUB_OUTPUT
-
-      - name: Handle CLI Version Bump
-        id: cli
-        if: steps.detect.outputs.cli_changed == 'true'
-        working-directory: ./contextlens-cli
-        run: |
-          npm version patch -m "chore(cli): bump version to %s [skip ci]"
-          NEW_VER=$(node -p "require('./package.json').version")
-          echo "version=$NEW_VER" >> $GITHUB_OUTPUT
-          echo "tag=cli-v$NEW_VER" >> $GITHUB_OUTPUT
-
-      - name: Handle Extension Version Bump
-        id: ext
-        if: steps.detect.outputs.ext_changed == 'true'
-        working-directory: ./vscode-extension
-        run: |
-          npm version patch -m "chore(extension): bump version to %s [skip ci]"
-          NEW_VER=$(node -p "require('./package.json').version")
-          echo "version=$NEW_VER" >> $GITHUB_OUTPUT
-          echo "tag=ext-v$NEW_VER" >> $GITHUB_OUTPUT
-
-      - name: Push Version Bumps
-        if: steps.detect.outputs.cli_changed == 'true' || steps.detect.outputs.ext_changed == 'true'
-        run: |
-          git pull --rebase origin main
-          git push origin main || echo "::warning:: Failed to push version bump commit to main. Proceeding anyway."
-
-      - name: Publish CLI to npm
-        if: steps.detect.outputs.cli_changed == 'true' && secrets.NPM_TOKEN != ''
-        working-directory: ./contextlens-cli
+      - name: Install dependencies
         run: |
           npm ci
-          npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm --prefix vscode-extension ci
 
-      - name: Package Extension
-        if: steps.detect.outputs.ext_changed == 'true'
-        working-directory: ./vscode-extension
+      - name: Type-check
+        working-directory: vscode-extension
+        run: |
+          npx tsc --noEmit -p tsconfig.json
+          npx tsc --noEmit -p tsconfig.test.json
+
+      - name: Run unit tests (Mocha)
+        run: npm test
+
+      - name: Webpack production compile
+        run: npm run package
+
+  # ── 2. Only on version tags, only if tests passed: build + publish release ─
+  release:
+    name: Build VSIX & Publish Release
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      vsix_name: ${{ steps.locate.outputs.vsix_name }}
+      version: ${{ steps.locate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+
+      - name: Install dependencies
         run: |
           npm ci
-          npx @vscode/vsce package -o contextlens-extension.vsix
+          npm --prefix vscode-extension ci
 
+      - name: Build VSIX
+        run: npm run package:vsix
 
-      - name: Zip Documentation
-        run: zip -r docs.zip docs/
-
-      - name: Create Git Tags & Push
-        id: tagging
+      - name: Locate VSIX and version
+        id: locate
+        working-directory: vscode-extension
         run: |
-          TAGS_TO_PUSH=""
-          PRIMARY_TAG=""
-          
-          if [ "${{ steps.detect.outputs.cli_changed }}" = "true" ]; then
-            git tag ${{ steps.cli.outputs.tag }}
-            TAGS_TO_PUSH="$TAGS_TO_PUSH ${{ steps.cli.outputs.tag }}"
-            PRIMARY_TAG="${{ steps.cli.outputs.tag }}"
-          fi
-          
-          if [ "${{ steps.detect.outputs.ext_changed }}" = "true" ]; then
-            git tag ${{ steps.ext.outputs.tag }}
-            TAGS_TO_PUSH="$TAGS_TO_PUSH ${{ steps.ext.outputs.tag }}"
-            PRIMARY_TAG="${{ steps.ext.outputs.tag }}"
-          fi
-          
-          if [ -n "$TAGS_TO_PUSH" ]; then
-            git push origin $TAGS_TO_PUSH
-          fi
-          
-          echo "primary_tag=$PRIMARY_TAG" >> $GITHUB_OUTPUT
+          FILE=$(ls -t contextlens-agent-*.vsix | head -n1)
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "vsix_name=$FILE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        if: steps.tagging.outputs.primary_tag != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tagging.outputs.primary_tag }}
-          files: |
-            vscode-extension/*.vsix
-            docs.zip
-          draft: false
-          prerelease: false
+          tag_name: ${{ github.ref_name }}
+          name: ContextLens ${{ github.ref_name }}
           generate_release_notes: true
-          fail_on_unmatched_files: false
+          files: vscode-extension/${{ steps.locate.outputs.vsix_name }}
+
+  # ── 3. Only after a successful release: auto-update docs on main ──────────
+  update-docs:
+    name: Update Docs & Changelog
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Update CONTEXT.md and CHANGELOG.md
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          TODAY=$(date -u +%Y-%m-%d)
+
+          # Update "Last Updated" line in docs/CONTEXT.md and CONTEXT.md
+          if [ -f docs/CONTEXT.md ]; then
+            sed -i "s/\*Last Updated: .*/\*Last Updated: $TODAY | Version: $VERSION*/" docs/CONTEXT.md
+          fi
+          if [ -f CONTEXT.md ]; then
+            sed -i "s/\*Last Updated: .*/\*Last Updated: $TODAY | Version: $VERSION*/" CONTEXT.md
+          fi
+
+          # Prepend a new entry to CHANGELOG.md (Keep a Changelog format)
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VERSION" -v date="$TODAY" '
+              /^## \[Unreleased\]/ && !done {
+                print;
+                print "";
+                print "## [" ver "] - " date;
+                done=1;
+                next
+              }
+              { print }
+            ' CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
+          fi
+
+      - name: Commit and push doc updates
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "docs: sync CONTEXT.md and CHANGELOG.md for v${{ needs.release.outputs.version }} [skip ci]"
+          branch: main
+          file_pattern: 'docs/CONTEXT.md CONTEXT.md CHANGELOG.md'

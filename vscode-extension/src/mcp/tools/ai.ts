@@ -47,6 +47,21 @@ const logAiCall: McpToolDefinition = {
     };
 
     EpisodeStore.get().enqueueCall(payload);
+
+    const store = EpisodeStore.get();
+    const root = store.getActiveWorkspaceRoot();
+    if (root) {
+      const activeEp = store.getActiveEpisode(root);
+      const { GraphStore } = require('../../graph/graphStore');
+      const graphStore = GraphStore.get(root);
+      const promptSnippet = (args.prompt || '').slice(0, 100);
+      graphStore.logDecision(promptSnippet, activeEp?.id, {
+        intent: args.intent,
+        modelName: args.modelName,
+        source: 'mcp'
+      });
+    }
+
     return 'AI call logged successfully inside active VS Code episode!';
   },
 };

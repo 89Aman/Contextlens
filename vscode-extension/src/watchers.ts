@@ -8,6 +8,8 @@ import { Redaction } from './redaction';
 import { getAuthManager } from './auth';
 import { NotificationService } from './NotificationService';
 import { EventDeduplicator } from './EventDeduplicator';
+import { GraphStore } from './graph/graphStore';
+import { Pass1Extractor } from './graph/extractor';
 
 export interface WatcherDeps {
   context: vscode.ExtensionContext;
@@ -178,20 +180,36 @@ function watchCommits(gitDir: string, workspaceRoot: string, deps: WatcherDeps):
         const redactedDiff = Redaction.redact(safeDiff);
         const redactedMessage = Redaction.redact(message);
 
-        // Enqueue to sync buffer — NOT sent immediately
-        // source: git_commit means backend skips Gemini
-        episodeStore.enqueueCall({
-          promptText: `git commit: ${redactedMessage}`,
-          modelResponse: '',
-          source: 'git_commit',
-          modelName: 'git',
-          intentTag: redactedMessage,
-          branchName: git.branch,
-          activeFilePath: '',
-          relatedFiles: [],
-          diffSnapshot: redactedDiff,
-          todoMatches: [],
-        }, workspaceRoot);
+        // Pass 1 deterministic graph extraction on commit
+        try {
+          const changedFiles = episode ? episode.changedFiles : [];
+          const extracted = Pass1Extractor.extractFromCommit(message, changedFiles, episode?.id);
+          const graphStore = GraphStore.get(workspaceRoot);
+          graphStore.addNodes(extracted.nodes);
+          graphStore.addEdges(extracted.edges);
+          graphStore.save();
+        } catch (graphErr) {
+          console.warn('[ContextLens] Commit graph extraction failed:', graphErr);
+        }
+
+        // Only enqueue cloud call if not in local-only mode
+        const isLocal = vscode.workspace.getConfiguration('contextlens').get<boolean>('localOnly', true);
+        if (!isLocal) {
+          // Enqueue to sync buffer — NOT sent immediately
+          // source: git_commit means backend skips Gemini
+          episodeStore.enqueueCall({
+            promptText: `git commit: ${redactedMessage}`,
+            modelResponse: '',
+            source: 'git_commit',
+            modelName: 'git',
+            intentTag: redactedMessage,
+            branchName: git.branch,
+            activeFilePath: '',
+            relatedFiles: [],
+            diffSnapshot: redactedDiff,
+            todoMatches: [],
+          }, workspaceRoot);
+        }
 
         deps.stateTreeProvider.refresh();
         deps.statusBar.render();
@@ -234,6 +252,20 @@ function watchFileSaves(deps: WatcherDeps): void {
           // Fix 13: Store workspace-relative paths, not absolute
           const relativePath = path.relative(workspaceRoot, doc.uri.fsPath);
           episodeStore.addChangedFile(relativePath, workspaceRoot);
+
+          // Pass 1 deterministic graph extraction on file save
+          try {
+            const activeEp = episodeStore.getActiveEpisode(workspaceRoot);
+            const content = doc.getText();
+            const extracted = Pass1Extractor.extractFromFileSave(relativePath, content, activeEp?.id);
+            const graphStore = GraphStore.get(workspaceRoot);
+            graphStore.addNodes(extracted.nodes);
+            graphStore.addEdges(extracted.edges);
+            graphStore.save();
+          } catch (graphErr) {
+            console.warn('[ContextLens] File save graph extraction failed:', graphErr);
+          }
+
           deps.stateTreeProvider.refresh();
         });
 

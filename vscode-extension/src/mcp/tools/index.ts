@@ -9,5 +9,6 @@ import './episode';
 import './ai';
 import './git';
 import './search';
+import './graph';
 
 export { ToolRegistry } from '../registry/ToolRegistry';

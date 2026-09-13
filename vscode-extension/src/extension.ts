@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { AuthManager, setAuthManager, getAuthManager } from './auth';
 import { EpisodeStore } from './episodeStore';
 import { StateTreeProvider } from './stateTreeProvider';
-import { ChatViewProvider } from './chatViewProvider';
+import { PrGenerator } from './prGenerator';
 import { ApiClient } from './apiClient';
 import { GitContext } from './gitContext';
 import { Telemetry } from './telemetry';
@@ -35,11 +35,6 @@ export function activate(context: vscode.ExtensionContext) {
   const stateTreeProvider = new StateTreeProvider();
   vscode.window.registerTreeDataProvider('contextlens.stateTree', stateTreeProvider);
 
-  const chatViewProvider = new ChatViewProvider(context.extensionUri);
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatViewProvider)
-  );
-
   // ── Status bar ───────────────────────────────────────────────────────────
   const statusBar = new ContextLensStatusBar(context, authManager);
 
@@ -57,9 +52,22 @@ export function activate(context: vscode.ExtensionContext) {
     statusBar: { render: () => statusBar.render() }
   });
 
-  // ── First-load sign-in prompt ────────────────────────────────────────────
-
+  // ── First-load resolution ────────────────────────────────────────────────
   (async () => {
+    const isLocal = vscode.workspace.getConfiguration('contextlens').get<boolean>('localOnly', true);
+    if (isLocal) {
+      if (vscode.workspace.workspaceFolders?.length) {
+        try {
+          await EpisodeStore.get().ensureProject();
+        } catch (err: any) {
+          console.error('[ContextLens] ensureProject failed on activation:', err);
+        }
+      }
+      statusBar.render();
+      stateTreeProvider.refresh();
+      return;
+    }
+
     const existingAuth = await authManager.loadAuthState();
     if (existingAuth) {
       // Already signed in → auto-resolve project (only if workspace is open)
@@ -110,6 +118,14 @@ export function activate(context: vscode.ExtensionContext) {
       }
       statusBar.render();
       stateTreeProvider.refresh();
+    })
+  );
+
+  // ── Command: Generate PR from Graph ─────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.generatePrFromGraph', async () => {
+      await PrGenerator.generatePrDescription();
     })
   );
 
@@ -558,6 +574,53 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // ── Helper: Install Agent Rules ──────────────────────────────────────────
+  function installAgentRules(workspaceRoot: string): boolean {
+    try {
+      const ruleDirective = `\n<!-- ContextLens Directive -->\n## ContextLens Project Memory\nWhen making non-obvious architecture choices, design trade-offs, or library selections, call the ContextLens MCP tool \`contextlens_log_decision\` with your rationale and alternatives considered.\n`;
+
+      // 1. .cursorrules
+      const cursorRulesPath = path.join(workspaceRoot, '.cursorrules');
+      if (fs.existsSync(cursorRulesPath)) {
+        const content = fs.readFileSync(cursorRulesPath, 'utf8');
+        if (!content.includes('contextlens_log_decision')) {
+          fs.appendFileSync(cursorRulesPath, ruleDirective, 'utf8');
+        }
+      } else {
+        fs.writeFileSync(cursorRulesPath, `# Cursor Rules\n${ruleDirective}`, 'utf8');
+      }
+
+      // 2. CLAUDE.md
+      const claudeMdPath = path.join(workspaceRoot, 'CLAUDE.md');
+      if (fs.existsSync(claudeMdPath)) {
+        const content = fs.readFileSync(claudeMdPath, 'utf8');
+        if (!content.includes('contextlens_log_decision')) {
+          fs.appendFileSync(claudeMdPath, ruleDirective, 'utf8');
+        }
+      } else {
+        fs.writeFileSync(claudeMdPath, `# Project Instructions\n${ruleDirective}`, 'utf8');
+      }
+
+      return true;
+    } catch (err) {
+      console.warn('[ContextLens] Failed to write agent rules:', err);
+      return false;
+    }
+  }
+
+  // ── Command: Install Agent Memory Directives ─────────────────────────────
+  context.subscriptions.push(
+    vscode.commands.registerCommand('contextlens.installAgentRules', async () => {
+      const root = EpisodeStore.get().getActiveWorkspaceRoot();
+      if (!root) {
+        vscode.window.showWarningMessage('ContextLens: Open a workspace folder first.');
+        return;
+      }
+      installAgentRules(root);
+      vscode.window.showInformationMessage('ContextLens: Agent memory directives installed in .cursorrules & CLAUDE.md ✦');
+    })
+  );
+
   // ── Command: Auto-Setup MCP in AI Clients ────────────────────────────────
 
   context.subscriptions.push(
@@ -600,7 +663,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }
 
-      // 2. Cursor MCP Settings
+      // 2. Cursor Global Settings
       let cursorMcpDir = '';
       if (process.platform === 'win32') {
         cursorMcpDir = path.join(process.env.APPDATA || '', 'Cursor', 'User', 'globalStorage', 'moomin.cursor-mcp');
@@ -631,17 +694,47 @@ export function activate(context: vscode.ExtensionContext) {
           };
 
           fs.writeFileSync(cursorPath, JSON.stringify(config, null, 2), 'utf8');
-          results.push('Cursor');
+          results.push('Cursor Global');
         } catch (err: any) {
-          vscode.window.showWarningMessage(`ContextLens: Failed to configure Cursor — ${err.message}`);
+          vscode.window.showWarningMessage(`ContextLens: Failed to configure Cursor Global — ${err.message}`);
+        }
+      }
+
+      // 3. Workspace .cursor/mcp.json and Agent Directives
+      const workspaceRoot = EpisodeStore.get().getActiveWorkspaceRoot();
+      if (workspaceRoot) {
+        try {
+          const cursorWsDir = path.join(workspaceRoot, '.cursor');
+          if (!fs.existsSync(cursorWsDir)) {
+            fs.mkdirSync(cursorWsDir, { recursive: true });
+          }
+          const wsMcpPath = path.join(cursorWsDir, 'mcp.json');
+          let wsConfig: any = {};
+          if (fs.existsSync(wsMcpPath)) {
+            try {
+              wsConfig = JSON.parse(fs.readFileSync(wsMcpPath, 'utf8')) || {};
+            } catch {}
+          }
+          if (!wsConfig.mcpServers) wsConfig.mcpServers = {};
+          wsConfig.mcpServers.contextlens = {
+            command: 'node',
+            args: [bridgePath]
+          };
+          fs.writeFileSync(wsMcpPath, JSON.stringify(wsConfig, null, 2), 'utf8');
+          results.push('Workspace Cursor (.cursor/mcp.json)');
+
+          installAgentRules(workspaceRoot);
+          results.push('Agent Rules (.cursorrules & CLAUDE.md)');
+        } catch (wsErr: any) {
+          console.warn('[ContextLens] Failed to configure workspace cursor MCP:', wsErr);
         }
       }
 
       if (results.length > 0) {
-        vscode.window.showInformationMessage(`ContextLens: Successfully configured MCP server for ${results.join(' and ')} ✦`);
+        vscode.window.showInformationMessage(`ContextLens: Successfully configured MCP & agent rules for: ${results.join(', ')} ✦`);
         Telemetry.log('MCP Auto-Setup Successful', { clients: results });
       } else {
-        vscode.window.showInformationMessage('ContextLens: No supported AI client directories found (Claude Desktop or Cursor). Placed bridge config in clipboard instead!');
+        vscode.window.showInformationMessage('ContextLens: Placed bridge config in clipboard!');
         vscode.commands.executeCommand('contextlens.copyMcpConfig');
       }
     })

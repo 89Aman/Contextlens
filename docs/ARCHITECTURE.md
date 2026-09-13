@@ -4,37 +4,16 @@ ContextLens is designed to bridge the gap between local development activity and
 
 ## System Components
 
-### 1. VS Code Extension (Client)
-- **Context Capture**: Monitors file changes, git branch switches, and AI interactions.
-- **Sync Engine**: Buffers local events and pushes them to the backend when a connection is available.
-- **Authentication**: Uses Firebase Auth (Google Sign-In) to secure communication.
-- **Local Storage**: Uses `vscode.SecretStorage` for tokens and `vscode.ExtensionContext.workspaceState` for ephemeral episode data.
+### 1. VS Code Extension (Local Core Engine - Default)
+- **Local Context Storage**: Stores project knowledge graph in `<workspaceRoot>/.contextlens/graph.json` and episodes in `.contextlens/episodes.json` (100% local, zero-cloud).
+- **Pass 1 Deterministic Extractor**: Deterministically extracts modified files, classes, functions, and symbols from saved diffs and git commits with zero token cost.
+- **Local MCP Server (`127.0.0.1:3012`)**: Exposes graph queries (`contextlens_get_graph`) and decision logging (`contextlens_log_decision`) to external AI clients (Cursor, Claude Desktop, Antigravity).
+- **One-Click PR Generator**: Uses episode subgraph and BYOK LLM (or deterministic fallback) to generate comprehensive PR descriptions directly from IDE.
 
-### 2. Backend (Cloud Functions & Firestore)
-- **API Layer**: Express-based Cloud Functions providing endpoints for project management, episode tracking, and AI logging.
-- **AI Processing**: Integrates with Google Gemini to generate diff explanations, PR summaries, and risk assessments.
-- **Data Persistence**: Firestore stores project metadata, episode history, and captured AI interaction logs.
-- **Security**: Firebase Admin SDK validates ID tokens on every request.
-
-#### Active route structure
-
-The backend exposes three Express apps, each exported as a Firebase Function v2
-from `src/index.js`. There is no `src/routes/` module anymore — routes live in
-the apps:
-
-| App | File | Endpoints |
-|-----|------|-----------|
-| Auth | `src/apps/auth.js` | `GET /auth/login`, `POST /auth/exchange` |
-| Core | `src/apps/core.js` | projects, episodes CRUD/export/list, settings get/update, search |
-| AI | `src/apps/ai.js` | calls/log, episodes/explain, branches/summarize |
-
-When adding an endpoint, add it to the matching app, register validation rules
-in `src/middleware/validate.js`, and export the app from `src/index.js`.
-
-### 3. Web Dashboard (Frontend)
-- **Visualization**: A React-based SPA that provides a timeline view of development activity.
-- **Project Management**: Allows users to manage repository links and project-level settings.
-- **Insight Delivery**: Displays AI-generated summaries and checklists for code reviews.
+### 2. Cloud Backend & Web Dashboard (Decoupled / Frozen for MVP)
+- **Backend (`src/apps`)**: Express/Firebase Cloud Functions v2 and Firestore database decoupled. Optional cloud sync is disabled by default (`contextlens.localOnly: true`).
+- **Dashboard (`contextlens-dashboard`)**: React SPA frozen. Primary user workflows occur directly inside VS Code and via connected MCP clients.
+- **Python Submodule (`graphify`)**: Discarded in favor of pure TypeScript Pass 1 AST extraction and native node-link JSON graph storage.
 
 ## Data Flow
 

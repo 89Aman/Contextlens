@@ -31,12 +31,19 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onView:contextlens.stateTree",
-    "onView:contextlens.chatView"
+    "onView:contextlens.stateTree"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "contextlens.generatePrFromGraph",
+        "title": "ContextLens: Generate PR from Graph"
+      },
+      {
+        "command": "contextlens.installAgentRules",
+        "title": "ContextLens: Install Agent Memory Directives (.cursorrules / CLAUDE.md)"
+      },
       {
         "command": "contextlens.signIn",
         "title": "ContextLens: Sign In"
@@ -115,12 +122,6 @@
           "id": "contextlens.stateTree",
           "name": "State Header",
           "type": "tree"
-        },
-        {
-          "icon": "resources/chat-icon.svg",
-          "id": "contextlens.chatView",
-          "name": "AI Chat",
-          "type": "webview"
         }
       ]
     },
@@ -141,6 +142,26 @@
     "configuration": {
       "title": "ContextLens",
       "properties": {
+        "contextlens.localOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Operate 100% locally without cloud backend or telemetry."
+        },
+        "contextlens.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "BYOK API key for LLM operations (e.g. Gemini or OpenAI key for PR generation)."
+        },
+        "contextlens.aiProvider": {
+          "type": "string",
+          "enum": [
+            "gemini",
+            "openai",
+            "none"
+          ],
+          "default": "gemini",
+          "description": "AI provider used for one-click PR generation from knowledge graph."
+        },
         "contextlens.enableShortcuts": {
           "type": "boolean",
           "default": true,
@@ -169,7 +190,7 @@
       "view/title": [
         {
           "command": "contextlens.openDashboard",
-          "when": "view == contextlens.stateTree || view == contextlens.chatView",
+          "when": "view == contextlens.stateTree",
           "group": "navigation"
         }
       ]

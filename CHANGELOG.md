@@ -1,59 +1,43 @@
 # Changelog
 
-All notable changes to ContextLens MCP will be documented in this file.
+All notable changes to ContextLens will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.3] - 2026-09-14
 
-### Added
+### Major Pivot: ContextLens Local Core
 
-#### Phase 1 — Foundation
-- `ToolRegistry` singleton for dynamic tool registration and dispatch
-- `McpPermission` enum (READ, WRITE, ADMIN, AI, SEARCH) with validation
-- `McpFeatureFlag` system with runtime overrides
-- 9 modular tool definitions extracted from monolithic server
-- Registry-powered endpoints `/mcp/tools/list` and `/mcp/tools/call`
-- `mcp-bridge.js` v2.0 with registry-first routing and legacy fallback
+Transitioned ContextLens into a 100% local-first, zero-cloud developer context engine and persistent knowledge graph.
 
-#### Phase 2 — Security
-- `TokenManager` with 30-minute rotation and 1-minute grace period
-- `ClientIdentityTracker` for AI client connection tracking
-- `RateLimiter` with token bucket algorithm and per-tool limits
-- Input validator with JSON Schema type/required checking
-- `McpErrorCode` enum for standardized error responses
-- Bridge auto-refreshes token on 401 (transparent rotation)
+#### Added
+- **Local Workspace Storage**:
+  - `GraphStore` managing `<workspaceRoot>/.contextlens/graph.json` and `.contextlens/archive/`.
+  - Automatic gitignore protection for `.contextlens/`.
+  - Offline-first `episodeStore.ts` saving sessions to `.contextlens/episodes.json`.
+- **Pass 1 Deterministic Extractor**:
+  - Zero-token multi-language AST/regex parser for TypeScript, JavaScript, Python, Go, Rust, Java.
+  - Automatic extraction of functions, methods, classes, interfaces, structs, and types on save.
+  - Intent comment mining: extracts `// WHY:`, `// DECISION:`, `// NOTE:`, `// REFACTOR:`, `// ARCH:`, `// FIX:` as first-class decision nodes with confidence 1.0.
+  - Git commit body mining: extracts commit body rationale into linked decision nodes.
+- **Embedded MCP Graph Tools**:
+  - `contextlens_get_graph`: Subgraph inspection for Cursor, Claude Desktop, Antigravity.
+  - `contextlens_log_decision`: Lets external AI agents append architectural reasoning to the graph.
+- **One-Click PR Generator**:
+  - `ContextLens: Generate PR from Graph`: Assembles episode subgraph and generates PR description offline or via BYOK Gemini.
+- **Zero-Friction MCP Onboarding**:
+  - `ContextLens: Auto-Setup MCP in AI Clients`: Automates configuration of `.cursor/mcp.json`, `~/.cursor/mcp.json`, Claude Desktop, and agent prompt rules.
+  - `ContextLens: Install Agent Memory Directives`: Writes prompt directives into `.cursorrules` and `CLAUDE.md`.
+- **Two-Tier Graph Compaction**:
+  - Prunes detailed leaf symbol nodes (`sym:*`) to `.contextlens/archive/<id>.json` on episode close.
+  - Retains high-level decision and file nodes in `graph.json` to keep active file under 100 KB.
+- **VSIX Packaging**:
+  - Added `.vscodeignore` to slim package from 434 KB down to 61.58 KB.
 
-#### Phase 3 — Full MCP Features
-- 5 MCP Resources: workspace://current, git-diff, episodes, diagnostics, symbols
-- 5 Prompt templates: explain_diff, review_code, generate_tests, security_audit, summarize_episode
-- `NotificationManager` for push events (episode/git/workspace changes)
-- `SessionManager` tracking session state and tool call history
-- Bridge supports resources/list, resources/read, prompts/list, prompts/get
-
-#### Phase 4 — Developer Experience
-- Health check system (Node version, server, bridge, secret, extension)
-- MCP error catalog with unique codes (CL-MCP-001 through CL-MCP-010)
-- `/mcp/health` and `/mcp/errors` endpoints
-
-#### Phase 5 — Platform Architecture
-- `PluginManager` for third-party tool/prompt/resource registration
-- `ProviderManager` supporting Gemini, GPT, Claude, Ollama, DeepSeek, OpenRouter
-- `JobQueue` for background processing with concurrency control
-- `WorkspaceManager` for multi-workspace isolation
-
-#### Phase 6 — Production Readiness
-- `McpLogger` with structured JSON logging and queryable history
-- `MetricsCollector` tracking calls/day, latency (avg/p95/max), failure rate
-- `VersionManager` for tool versioning and deprecation
-- Unit tests for registry, permissions, security modules
-- Architecture, Getting Started, and Security documentation
-
-#### Phase 7 — Community & Release
-- CONTRIBUTING.md with development setup and PR guidelines
-- CODE_OF_CONDUCT.md (Contributor Covenant v2.1)
-- SECURITY.md with vulnerability reporting process
-- CHANGELOG.md
-- CI/CD workflow for automated build and test
-- MCP example configurations for Claude Desktop, Cursor, and more
+#### Removed & Decoupled
+- Stripped Firebase Cloud Functions backend (`src/`).
+- Removed React web dashboard (`contextlens-dashboard/`).
+- Removed legacy CLI and duplicate packages (`contextlens-cli/`, `packages/`).
+- Removed custom chat sidebar webview (`chatViewProvider.ts`).
+- Removed Firebase config files (`firebase.json`, `firestore.rules`, `.firebaserc`).

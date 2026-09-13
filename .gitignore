@@ -20,3 +20,5 @@ firebase-debug.log
 *.vsix
 *.tsbuildinfo
 .claude
+.obsidian/
+.contextlens/

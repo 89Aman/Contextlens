@@ -1,69 +1,26 @@
 {
-  "name": "contextlens-backend",
-  "version": "0.1.0",
+  "name": "contextlens",
+  "version": "1.0.3",
   "private": true,
-  "description": "The backend and monorepo root for ContextLens - AI-driven coding context and insights.",
+  "description": "ContextLens - 100% Local-first AI developer context engine and persistent knowledge graph for VS Code.",
   "author": "Noventra-Labs",
-  "keywords": [
-    "ai",
-    "context",
-    "developer-tools",
-    "vscode-extension",
-    "gemini",
-    "coding-insights"
-  ],
+  "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Noventra-Labs/ContextLens.git"
+    "url": "https://github.com/Noventra-Labs/ContextLens.git"
   },
   "bugs": {
     "url": "https://github.com/Noventra-Labs/ContextLens/issues"
   },
   "homepage": "https://github.com/Noventra-Labs/ContextLens#readme",
-  "license": "MIT",
-  "main": "src/index.js",
-  "engines": {
-    "node": "22"
-  },
+  "workspaces": [
+    "vscode-extension"
+  ],
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.96.0",
-    "@google-cloud/vertexai": "^1.12.0",
-    "@google/generative-ai": "^0.24.1",
-    "@sentry/google-cloud-serverless": "^10.53.1",
-    "@sentry/node": "^10.53.1",
-    "@sentry/profiling-node": "^10.53.1",
-    "body-parser": "^2.3.0",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.6.2",
-    "express-validator": "^7.3.2",
-    "firebase-admin": "^14.2.0",
-    "firebase-functions": "^7.3.2",
-    "helmet": "^8.1.0",
-    "morgan": "^1.11.0",
-    "openai": "^6.38.0",
-    "uuid": "^14.0.0"
-  },
-  "overrides": {
-    "websocket-driver": "^0.7.5",
-    "ip-address": "^10.3.1",
-    "brace-expansion@<2": "^1.1.18",
-    "brace-expansion@2": "^2.1.4",
-    "brace-expansion@>=5": "^5.0.9",
-    "js-yaml@<4": "^3.15.1",
-    "protobufjs@<8": "^7.6.5"
-  },
-  "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "jest": "^30.4.2",
-    "nodemon": "^3.1.14"
+    "compile": "npm --prefix vscode-extension run compile",
+    "watch": "npm --prefix vscode-extension run watch",
+    "test": "npm --prefix vscode-extension run test:unit",
+    "package": "npm --prefix vscode-extension run package",
+    "package:vsix": "cd vscode-extension && npx --yes @vscode/vsce package --no-dependencies"
   }
 }

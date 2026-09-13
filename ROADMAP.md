@@ -1,71 +1,42 @@
 # ContextLens Roadmap
 
-## v1 — Foundation Release (current scope)
+## v1.0 — Local Core Pivot (Current Scope)
 
-**Goal:** restore developer context to AI coding sessions. Everything below is
-considered in-scope for the public v1 release.
+**Goal:** Provide a 100% local-first, zero-cloud developer context engine and knowledge graph for VS Code.
 
-### ✅ In v1 (done or in-progress)
-
-- [x] VS Code capture (diffs, commits, file saves, branch switches)
-- [x] Episode management (create/close/auto-name, stale detection, pause/resume)
-- [x] Local MCP server (`127.0.0.1:3012`, rotating token auth, rate limiting)
-- [x] MCP bridge (stdio JSON-RPC) for Claude Desktop, Cursor, Antigravity, Gemini CLI
-- [x] Context search (`search_context`)
-- [x] Dashboard timeline (projects, episodes, per-call transcripts)
-- [x] Manual diff explanation (`explain_diff`) and PR summary (`summarize_branch`) — AI is never auto-invoked
-- [x] Secure Firebase sync (opt-in, idempotency keys, ownership checks)
-- [x] Secret redaction (local + backend) and encrypted provider keys
-
-### v1 hardening (this sprint)
-
-- [x] Resolve duplicate CLI binaries (`contextlens` vs `contextlens-mcp`)
-- [x] Remove legacy `src/routes/api.js`
-- [x] Harden MCP auth: constant-time token compare, request IDs, body limits, replay tests
-- [x] Extend redaction patterns + crypto tests + key-rotation support
-- [x] CI matrix: backend/dashboard/cli/extension tests, bridge smoke, gitleaks, bin-conflict check
+### ✅ Completed in Local Core v1.0
+- [x] **Local Workspace Knowledge Graph**: `.contextlens/graph.json` and `.contextlens/episodes.json` strictly local and gitignored.
+- [x] **Pass 1 Deterministic Extractor**: Zero-token AST/regex symbol extraction for TypeScript, JavaScript, Python, Go, Rust, Java.
+- [x] **Passive Intent & Decision Mining**: Extracted intent comments (`WHY:`, `DECISION:`, `NOTE:`) and Git commit bodies into first-class graph decision nodes.
+- [x] **Embedded MCP Server**: Running on `127.0.0.1:3012` with token auth and rate limiting; exposing `contextlens_get_graph` and `contextlens_log_decision`.
+- [x] **Zero-Friction MCP Onboarding**: Auto-configures Cursor (`.cursor/mcp.json`), Claude Desktop, and injects agent directives (`.cursorrules`, `CLAUDE.md`).
+- [x] **One-Click PR Generation**: `ContextLens: Generate PR from Graph` command generating PR descriptions offline or via BYOK Gemini.
+- [x] **Two-Tier Graph Compaction**: Prunes leaf symbols to `.contextlens/archive/<id>.json` on episode close while preserving decision and file summary nodes.
+- [x] **Lean VSIX Packaging**: 61.58 KB bundle containing compiled assets and runtime bridge.
+- [x] **Decoupling**: Removed legacy Firebase cloud functions backend and React dashboard.
 
 ---
 
-## Deferred to v1.1 or later
+## v1.1 — Enhanced Developer Experience (Next Milestone)
 
-These are explicitly **out of scope for v1** to keep the launch focused.
-
-### v1.1 — Smarter capture
-
-- [x] Episode retention/archival job (scheduled Cloud Function; see [data-model.md](docs/data-model.md))
-- [x] Semantic search across episodes (embeddings + vector ranking; `POST /search/index` + `/search/semantic`)
-- [ ] Autonomous background agents
-- [ ] Multi-agent workflows
-- [ ] Auto-episode detection driven by more git signals
-- [ ] Workspace-level AI summaries
-- [ ] Repository-wide code indexing and embeddings (semantic memory)
-
-### v1.1 — Platform polish
-
-- [ ] Automatic commit operations
-- [ ] Team collaboration and multi-user dashboards
-- [ ] Cross-editor support (JetBrains, Zed, etc.)
-- [ ] Long-term semantic memory across projects
-
-### v2 — Platform
-
-- [ ] Plugin marketplace for community tools
-- [ ] Custom resource providers
-- [ ] Webhook integrations
-- [ ] REST API for external services
-- [ ] Self-hosted deployment option
-- [ ] Slack/Discord notifications
+- [ ] **Local Graph Visualizer**: Lightweight interactive webview or SVG export showing episode graph evolution.
+- [ ] **Tree-sitter AST Parsing**: Optional native Tree-sitter parsers for deeper type-hierarchy extraction.
+- [ ] **Automated Commit Suggestions**: Generate commit messages using active episode subgraph changes.
+- [ ] **Configurable Compaction Thresholds**: User settings for symbol retention and graph max size.
+- [ ] **Cross-Editor CLI / Daemon**: Standalone local daemon for Neovim and Zed.
 
 ---
 
-## How We Prioritize
+## v1.2 — Collaborative & Cross-Project Context
 
-1. **User feedback** — Issues and feature requests drive priorities
-2. **Security** — Security fixes ship immediately
-3. **Stability** — Bug fixes before new features
-4. **Community** — Features that help the most users come first
+- [ ] **Graph Export / Import**: Share redacted episode graphs with team members via Git commits (`.contextlens/shared/`).
+- [ ] **Cross-Project Memory Linking**: Reference architectural decisions across multiple repositories.
+- [ ] **Local Embeddings**: 100% on-device embedding index for semantic code search without external APIs.
 
-## Feature Requests
+---
 
-Have an idea? [Open a feature request](https://github.com/Noventra-labs/Contextlens/issues/new?template=feature_request.yml)
+## Priorities
+
+1. **Local-First Privacy**: Never send code or diffs to external servers without explicit user invocation.
+2. **Zero-Token Performance**: Minimize latency and token cost using deterministic parsing.
+3. **Agent Interoperability**: First-class support for Cursor, Claude Desktop, Antigravity, and all standard MCP clients.
