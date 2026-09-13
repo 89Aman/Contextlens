@@ -108,10 +108,7 @@ jobs:
         run: |
           TODAY=$(date -u +%Y-%m-%d)
 
-          # Update "Last Updated" line in docs/CONTEXT.md and CONTEXT.md
-          if [ -f docs/CONTEXT.md ]; then
-            sed -i "s/\*Last Updated: .*/\*Last Updated: $TODAY | Version: $VERSION*/" docs/CONTEXT.md
-          fi
+          # Update "Last Updated" line in CONTEXT.md
           if [ -f CONTEXT.md ]; then
             sed -i "s/\*Last Updated: .*/\*Last Updated: $TODAY | Version: $VERSION*/" CONTEXT.md
           fi
@@ -135,4 +132,5 @@ jobs:
         with:
           commit_message: "docs: sync CONTEXT.md and CHANGELOG.md for v${{ needs.release.outputs.version }} [skip ci]"
           branch: main
-          file_pattern: 'docs/CONTEXT.md CONTEXT.md CHANGELOG.md'
+          file_pattern: 'CONTEXT.md CHANGELOG.md'
+

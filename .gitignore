@@ -22,3 +22,5 @@ firebase-debug.log
 .claude
 .obsidian/
 .contextlens/
+docs/
+examples/
