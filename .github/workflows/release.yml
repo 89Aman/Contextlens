@@ -1,60 +1,56 @@
-name: Release
+name: Release Automation
 
 on:
   push:
+    branches: [main]
     tags: ['v*.*.*']
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  # ── 1. Always runs: type-check + unit tests ──────────────────────────────
-  test:
-    name: Test
+  auto-release:
+    name: Auto Release & Publish
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-          cache-dependency-path: |
-            package-lock.json
-            vscode-extension/package-lock.json
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
+      - name: Configure Git
         run: |
-          npm ci
-          npm --prefix vscode-extension ci
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Type-check
-        working-directory: vscode-extension
+      - name: Check Version & Tag State
+        id: version_check
         run: |
-          npx tsc --noEmit -p tsconfig.json
-          npx tsc --noEmit -p tsconfig.test.json
+          VERSION=$(node -p "require('./vscode-extension/package.json').version")
+          TAG="v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Run unit tests (Mocha)
-        run: npm test
-
-      - name: Webpack production compile
-        run: npm run package
-
-  # ── 2. Only on version tags, only if tests passed: build + publish release ─
-  release:
-    name: Build VSIX & Publish Release
-    needs: test
-    runs-on: ubuntu-latest
-    outputs:
-      vsix_name: ${{ steps.locate.outputs.vsix_name }}
-      version: ${{ steps.locate.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists."
+            if [[ "${{ github.ref }}" == "refs/tags/"* ]]; then
+              echo "Triggered explicitly by tag push. Proceeding to release."
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Version $VERSION is already released. No new release needed."
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "New version $VERSION detected. Creating tag $TAG and triggering release."
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG" || true
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-node@v4
+        if: steps.version_check.outputs.should_release == 'true'
         with:
           node-version: 20.x
           cache: 'npm'
@@ -63,53 +59,52 @@ jobs:
             vscode-extension/package-lock.json
 
       - name: Install dependencies
+        if: steps.version_check.outputs.should_release == 'true'
         run: |
           npm ci
           npm --prefix vscode-extension ci
 
+      - name: Type-check
+        if: steps.version_check.outputs.should_release == 'true'
+        working-directory: vscode-extension
+        run: |
+          npx tsc --noEmit -p tsconfig.json
+          npx tsc --noEmit -p tsconfig.test.json
+
+      - name: Run unit tests (Mocha)
+        if: steps.version_check.outputs.should_release == 'true'
+        run: npm test
+
       - name: Build VSIX
+        if: steps.version_check.outputs.should_release == 'true'
         run: npm run package:vsix
 
-      - name: Locate VSIX and version
+      - name: Locate VSIX artifact
+        if: steps.version_check.outputs.should_release == 'true'
         id: locate
         working-directory: vscode-extension
         run: |
           FILE=$(ls -t contextlens-agent-*.vsix | head -n1)
-          VERSION=${GITHUB_REF_NAME#v}
           echo "vsix_name=$FILE" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
+      - name: Publish GitHub Release
+        if: steps.version_check.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ContextLens ${{ github.ref_name }}
+          tag_name: ${{ steps.version_check.outputs.tag }}
+          name: ContextLens ${{ steps.version_check.outputs.tag }}
           generate_release_notes: true
           files: vscode-extension/${{ steps.locate.outputs.vsix_name }}
 
-  # ── 3. Only after a successful release: auto-update docs on main ──────────
-  update-docs:
-    name: Update Docs & Changelog
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-
       - name: Update CONTEXT.md and CHANGELOG.md
+        if: steps.version_check.outputs.should_release == 'true'
         env:
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ steps.version_check.outputs.version }}
         run: |
           TODAY=$(date -u +%Y-%m-%d)
-
-          # Update "Last Updated" line in CONTEXT.md
           if [ -f CONTEXT.md ]; then
             sed -i "s/\*Last Updated: .*/\*Last Updated: $TODAY | Version: $VERSION*/" CONTEXT.md
           fi
-
-          # Prepend a new entry to CHANGELOG.md (Keep a Changelog format)
           if [ -f CHANGELOG.md ]; then
             awk -v ver="$VERSION" -v date="$TODAY" '
               /^## \[Unreleased\]/ && !done {
@@ -124,9 +119,9 @@ jobs:
           fi
 
       - name: Commit and push doc updates
+        if: steps.version_check.outputs.should_release == 'true'
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
-          commit_message: "docs: sync CONTEXT.md and CHANGELOG.md for v${{ needs.release.outputs.version }} [skip ci]"
+          commit_message: "docs: sync CONTEXT.md and CHANGELOG.md for ${{ steps.version_check.outputs.tag }} [skip ci]"
           branch: main
           file_pattern: 'CONTEXT.md CHANGELOG.md'
-
