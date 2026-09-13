@@ -22,5 +22,17 @@
     "test": "npm --prefix vscode-extension run test:unit",
     "package": "npm --prefix vscode-extension run package",
     "package:vsix": "cd vscode-extension && npx --yes @vscode/vsce package --no-dependencies"
+  },
+  "overrides": {
+    "mocha": {
+      "diff": "^8.0.4",
+      "serialize-javascript": "^7.1.1"
+    },
+    "serialize-javascript": "^7.1.1",
+    "diff": "^8.0.4",
+    "brace-expansion@<2": "^1.1.18",
+    "brace-expansion@2": "^2.1.4",
+    "fast-uri": "^3.1.5",
+    "js-yaml@4": "^4.3.1"
   }
 }

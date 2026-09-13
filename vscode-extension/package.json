@@ -225,7 +225,12 @@
     "webpack-cli": "^5.0.2"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.5",
+    "mocha": {
+      "diff": "^8.0.4",
+      "serialize-javascript": "^7.1.1"
+    },
+    "serialize-javascript": "^7.1.1",
+    "diff": "^8.0.4",
     "brace-expansion@<2": "^1.1.18",
     "brace-expansion@2": "^2.1.4",
     "fast-uri": "^3.1.5",
