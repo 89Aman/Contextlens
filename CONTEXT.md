@@ -1,7 +1,7 @@
 # ContextLens Local Core — Consolidated Project Context
 
 > **Single-File Complete Technical Reference & Context Manual**  
-> *Last Updated: 2026-09-14 | Version: 1.0.3 / 1.1.0*  
+> *Last Updated: 2026-09-14 | Version: 1.2.0*  
 > *Status: 100% Local-First Architecture Verified | Zero Cloud Dependencies*
 
 ---

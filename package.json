@@ -1,6 +1,6 @@
 {
   "name": "contextlens",
-  "version": "1.0.3",
+  "version": "1.2.0",
   "private": true,
   "description": "ContextLens - 100% Local-first AI developer context engine and persistent knowledge graph for VS Code.",
   "author": "Noventra-Labs",

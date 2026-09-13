@@ -426,8 +426,35 @@ function getFallbackToolList() {
   return [
     {
       name: 'get_status',
-      description: 'Get ContextLens VS Code extension active status, active project, and active episode',
+      description: 'Get current ContextLens extension status (active episode, workspace, project)',
       inputSchema: { type: 'object', properties: {} }
+    },
+    {
+      name: 'contextlens_get_graph',
+      description: 'Get the local knowledge graph or active episode subgraph (nodes, edges, decisions, files, symbols)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          episodeId: { type: 'string', description: 'Episode UUID (optional, defaults to active episode)' },
+          maxDepth: { type: 'number', description: 'Traversal depth limit (default 2)' },
+          nodeTypes: { type: 'array', items: { type: 'string' }, description: 'Filter by node types (file, symbol, decision, commit, episode)' }
+        }
+      }
+    },
+    {
+      name: 'contextlens_log_decision',
+      description: 'Log an architectural decision or design rationale into the local knowledge graph',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          summary: { type: 'string', description: 'Short summary of the decision made' },
+          rationale: { type: 'string', description: 'Why this decision was chosen over alternatives' },
+          files: { type: 'array', items: { type: 'string' }, description: 'Files modified or affected' },
+          symbols: { type: 'array', items: { type: 'string' }, description: 'Functions/classes affected' },
+          episodeId: { type: 'string', description: 'Target episode ID (optional)' }
+        },
+        required: ['summary']
+      }
     },
     {
       name: 'start_episode',
